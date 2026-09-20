@@ -1,19 +1,11 @@
-import os
+import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-# `firebase_config.py` တည်ရှိရာ ဖိုင်တွဲလမ်းကြောင်းကို အခြေခံ၍ JSON ဖိုင်ကို တိကျစွာ ရှာဖွေခြင်း
-current_dir = os.path.dirname(os.path.abspath(__file__))
-cred_path = os.path.join(current_dir, "firebase_credentials.json")
-
+# Streamlit Secrets ထဲက firebase အချက်အလက်များကို ယူ၍ ချိတ်ဆက်ခြင်း
 if not firebase_admin._apps:
-    if os.path.exists(cred_path):
-        cred = credentials.Certificate(cred_path)
-        firebase_admin.initialize_app(cred)
-    else:
-        raise FileNotFoundError(
-            f"'{cred_path}' ဖိုင်ကို မတွေ့ရှိရပါ။ ကျေးဇူးပြု၍ Project ဖိုင်တွဲထဲသို့ ထည့်ပါ။"
-        )
+    cred_dict = dict(st.secrets["firebase"])
+    cred = credentials.Certificate(cred_dict)
+    firebase_admin.initialize_app(cred)
 
-# Firestore Database Client ကို ခေါ်ယူသုံးစွဲရန်
 db = firestore.client()
