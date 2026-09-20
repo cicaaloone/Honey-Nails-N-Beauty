@@ -1,0 +1,40 @@
+# --- SIDEBAR NAVIGATION (st.page_link ဖြင့် ပြောင်းလဲခြင်း) ---
+st.sidebar.success(
+    f"👤 Current User: {st.session_state.username} ({st.session_state.role})"
+)
+
+st.sidebar.markdown("---")
+st.sidebar.title("📌 Navigation")
+
+# Home စာမျက်နှာ
+st.sidebar.page_link("Home.py", label="Home", icon="🏠")
+
+# Sales ခွင့်ပြုချက်ရှိမှ ပြမည်
+if st.session_state.role == "Admin" or st.session_state.get(
+    "permissions", {}
+).get("sales", False):
+  st.sidebar.page_link("pages/_Sales.py", label="Sales & Receipt", icon="📊")
+
+# Inventory ကြည့်ရှုခွင့်ရှိမှ ပြမည်
+if st.session_state.role == "Admin" or st.session_state.get(
+    "permissions", {}
+).get("inventory_view", False):
+  st.sidebar.page_link(
+      "pages/_Inventory.py", label="Inventory Management", icon="📦"
+  )
+
+# Restock စီမံခန့်ခွဲခွင့်ရှိမှသာပြမည်
+if st.session_state.role == "Admin" or st.session_state.get(
+    "permissions", {}
+).get("restock", False):
+  st.sidebar.page_link(
+      "pages/_Restock.py", label="Restock Management", icon="📥"
+  )
+
+st.sidebar.markdown("---")
+if st.sidebar.button("🚪 Logout ထွက်မည်", use_container_width=True):
+  st.session_state.logged_in = False
+  st.session_state.username = ""
+  st.session_state.role = ""
+  st.session_state.permissions = {}
+  st.rerun()
