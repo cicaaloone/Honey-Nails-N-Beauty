@@ -73,6 +73,56 @@ def save_restock_to_firebase():
     st.error(f"❌ Restock Orders သိမ်းဆည်းရာတွင် အမှားရှိပါသည်: {e}")
 
 
+# Helper Function: Data Editor မှ ပြောင်းလဲမှုများကို Order ထဲသို့ သိမ်းဆည်းရန် (on_change အတွက်)
+def handle_editor_change(order_id, editor_key):
+  edited_data = st.session_state.get(editor_key)
+  if edited_data is not None:
+    for r_ord in st.session_state.restock_orders:
+      if r_ord["order_id"] == order_id:
+        updated_ord_items = []
+        last_num = 0
+        
+        # ပထမအကြိမ် ရှိပြီးသား code နံပါတ်များကို စစ်ဆေးရန်
+        for _, row in edited_data.iterrows():
+          c = str(row["Item Code"])
+          if c.startswith("HNB-"):
+            try:
+              num = int(c.split("-")[1])
+              if num > last_num:
+                last_num = num
+            except:
+              pass
+
+        for _, row in edited_data.iterrows():
+          raw_code = row["Item Code"]
+          if pd.notna(raw_code) and str(raw_code).strip() != "":
+            code = str(raw_code).strip()
+          else:
+            last_num += 1
+            code = f"HNB-{last_num:03d}"
+
+          desc = (
+              str(row["Item Description"])
+              if pd.notna(row["Item Description"])
+              else "New Item"
+          )
+          qty = int(row["Qty"]) if pd.notna(row["Qty"]) else 0
+          price = float(row["Price"]) if pd.notna(row["Price"]) else 0.0
+          cargo = float(row["Cargo"]) if pd.notna(row["Cargo"]) else 0.0
+
+          updated_ord_items.append({
+              "Item Code": code,
+              "Item Description": desc,
+              "Qty": qty,
+              "Price": price,
+              "Cargo": cargo,
+          })
+        r_ord["items"] = updated_ord_items
+        save_restock_to_firebase()
+        update_inventory_stock_on_restock(updated_ord_items)
+        break
+
+
 # 2. Restock Receipt Dialog
 @st.dialog("📥 Restock Receipt / ပစ္စည်းဝယ်ယူမှုပြေစာ", width="large")
 def show_restock_dialog(order):
@@ -155,6 +205,8 @@ def show_restock_dialog(order):
           "Amount",
       ]]
 
+      editor_key = f"r_editor_{order['order_id']}"
+
       if st.session_state[print_mode_key]:
         st.info("💡 **Print View** သို့ ရောက်ရှိနေပါပြီ။")
         st.dataframe(df_items, use_container_width=True, hide_index=True)
@@ -165,40 +217,30 @@ def show_restock_dialog(order):
             use_container_width=True,
             hide_index=True,
             num_rows="dynamic",
-            key=f"r_editor_{order['order_id']}",
+            key=editor_key,
+            on_change=handle_editor_change,
+            args=(order["order_id"], editor_key),
         )
 
-        updated_items = []
-        for idx, row in edited_df.iterrows():
-          code = (
-              str(row["Item Code"])
-              if pd.notna(row["Item Code"]) and str(row["Item Code"]).strip() != ""
-              else f"HNB-{idx+101}"
-          )
-          desc = (
-              str(row["Item Description"])
-              if pd.notna(row["Item Description"])
-              else "New Item"
-          )
-          qty = int(row["Qty"]) if pd.notna(row["Qty"]) else 1
-          price = float(row["Price"]) if pd.notna(row["Price"]) else 0.0
-          cargo = float(row["Cargo"]) if pd.notna(row["Cargo"]) else 0.0
-
-          updated_items.append({
-              "Item Code": code,
-              "Item Description": desc,
-              "Qty": qty,
-              "Price": price,
-              "Cargo": cargo,
-          })
-
-        order["items"] = updated_items
-        save_restock_to_firebase()
-        update_inventory_stock_on_restock(updated_items)
-
-      total_items_cost = (edited_df["Qty"] * edited_df["Price"]).sum()
-      total_cargo_fee = edited_df["Cargo"].sum()
-      total_cost = total_items_cost + total_cargo_fee
+        # လက်ရှိပြသမည့် df အတွက် Amount ကို တွက်ချက်ရန်
+        if editor_key in st.session_state:
+          current_df = st.session_state[editor_key]
+          if not current_df.empty:
+            if "Qty" in current_df.columns and "Price" in current_df.columns:
+              q = pd.to_numeric(current_df["Qty"], errors="coerce").fillna(0)
+              p = pd.to_numeric(current_df["Price"], errors="coerce").fillna(0.0)
+              c = pd.to_numeric(current_df["Cargo"], errors="coerce").fillna(0.0) if "Cargo" in current_df.columns else 0.0
+              total_items_cost = (q * p).sum()
+              total_cargo_fee = c.sum()
+              total_cost = total_items_cost + total_cargo_fee
+            else:
+              total_items_cost, total_cargo_fee, total_cost = 0, 0, 0
+          else:
+            total_items_cost, total_cargo_fee, total_cost = 0, 0, 0
+        else:
+          total_items_cost = (df_items["Qty"] * df_items["Price"]).sum()
+          total_cargo_fee = df_items["Cargo"].sum()
+          total_cost = total_items_cost + total_cargo_fee
 
       st.markdown("---")
       st.markdown(f"**ပစ္စည်းတန်ဖိုး စုစုပေါင်း:** {total_items_cost:,.0f} ကျပ်")
@@ -334,12 +376,11 @@ with top_col3:
 
 st.markdown("---")
 
-# ဇယား (၁): Base Restock Items & Pricing Editor (Form ဖြုတ်ပြီးသား)
+# ဇယား (၁): Base Restock Items & Pricing Editor (Auto-save with on_change)
 st.markdown("---")
 st.subheader("📋 Base Restock Items & Pricing Editor")
 st.write(
-    "အောက်ပါ ဇယားတွင် Restock ပစ္စည်းအချက်အလက်များကို တည်းဖြတ်ပြီး အပြောင်းအလဲများကို"
-    " သိမ်းဆည်းပါ။"
+    "အောက်ပါ ဇယားတွင် Restock ပစ္စည်းအချက်အလက်များကို တည်းဖြတ်နိုင်ပြီး Enter ခေါက်သည်နှင့် ချက်ချင်း သိမ်းဆည်းသွားပါမည်။"
 )
 
 if st.session_state.restock_orders:
@@ -358,17 +399,18 @@ if st.session_state.restock_orders:
       })
 
   df_base_restock = pd.DataFrame(all_restock_items)
+  base_editor_key = "base_restock_editor_main"
 
-  # Form မပါတော့ဘဲ data_editor ကို တိုက်ရိုက်သုံးထားခြင်း (တစ်ခါတည်း ချက်ချင်း update ဖြစ်ရန်)
   edited_base_restock = st.data_editor(
       df_base_restock,
       use_container_width=True,
       hide_index=True,
       num_rows="dynamic",
-      key="base_restock_editor",
+      key=base_editor_key,
   )
 
-  if st.button("💾 Save Changes (အပြောင်းအလဲများကို သိမ်းမည်)", type="primary"):
+  # Main page ပေါ်က ဇယားအတွက် အပြောင်းအလဲများကို သိမ်းဆည်းရန် ခလုတ် သို့မဟုတ် auto-handling
+  if st.button("💾 Save All Changes (အပြောင်းအလဲအားလုံး သိမ်းမည်)", type="primary"):
     if edited_base_restock is not None:
       for r_ord in st.session_state.restock_orders:
         o_id = r_ord["order_id"]
@@ -377,12 +419,25 @@ if st.session_state.restock_orders:
         ]
         if not matching_rows.empty:
           updated_ord_items = []
-          for idx, row in matching_rows.iterrows():
-            code = (
-                str(row["Item Code"])
-                if pd.notna(row["Item Code"]) and str(row["Item Code"]).strip() != ""
-                else f"HNB-{idx+201}"
-            )
+          last_num = 0
+          for _, row in matching_rows.iterrows():
+            c = str(row["Item Code"])
+            if c.startswith("HNB-"):
+              try:
+                num = int(c.split("-")[1])
+                if num > last_num:
+                  last_num = num
+              except:
+                pass
+
+          for _, row in matching_rows.iterrows():
+            raw_code = row["Item Code"]
+            if pd.notna(raw_code) and str(raw_code).strip() != "":
+              code = str(raw_code).strip()
+            else:
+              last_num += 1
+              code = f"HNB-{last_num:03d}"
+
             desc = (
                 str(row["Item Description"])
                 if pd.notna(row["Item Description"])
