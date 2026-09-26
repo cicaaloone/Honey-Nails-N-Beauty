@@ -2,6 +2,14 @@ import base64
 import os
 import streamlit as st
 from firebase_config import db  # firebase_config.py ထဲက db ကို ယူသုံးခြင်း
+import json
+import firebase_admin
+from firebase_admin import credentials
+
+# Firebase ကို တစ်ကြိမ်တည်းသာ initialize လုပ်ရန် စစ်ဆေးခြင်း
+if not firebase_admin._apps:
+    cred = credentials.Certificate("firebase_credentials.json")
+    firebase_admin.initialize_app(cred)
 
 st.set_page_config(
     page_title="Honey Nails 'n' Beauty - Management System",
