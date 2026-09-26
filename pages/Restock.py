@@ -169,9 +169,11 @@ def show_restock_dialog(order):
         )
 
         updated_items = []
-        for _, row in edited_df.iterrows():
+        for idx, row in edited_df.iterrows():
           code = (
-              str(row["Item Code"]) if pd.notna(row["Item Code"]) else "HNB-999"
+              str(row["Item Code"])
+              if pd.notna(row["Item Code"]) and str(row["Item Code"]).strip() != ""
+              else f"HNB-{idx+101}"
           )
           desc = (
               str(row["Item Description"])
@@ -332,12 +334,12 @@ with top_col3:
 
 st.markdown("---")
 
-# ဇယား (၁): Base Restock Items & Pricing Editor (st.form ကို အသုံးပြုထားသည်)
+# ဇယား (၁): Base Restock Items & Pricing Editor (Form ဖြုတ်ပြီးသား)
 st.markdown("---")
 st.subheader("📋 Base Restock Items & Pricing Editor")
 st.write(
-    "အောက်ပါ ဇယားတွင် Restock ပစ္စည်းအချက်အလက်များကို တည်းဖြတ်ပြီး 'Save Changes'"
-    " ခလုတ်ကို နှိပ်ပါ။"
+    "အောက်ပါ ဇယားတွင် Restock ပစ္စည်းအချက်အလက်များကို တည်းဖြတ်ပြီး အပြောင်းအလဲများကို"
+    " သိမ်းဆည်းပါ။"
 )
 
 if st.session_state.restock_orders:
@@ -357,53 +359,50 @@ if st.session_state.restock_orders:
 
   df_base_restock = pd.DataFrame(all_restock_items)
 
-  # Form စတင်ခြင်း
-  with st.form("restock_edit_form"):
-    edited_base_restock = st.data_editor(
-        df_base_restock,
-        use_container_width=True,
-        hide_index=True,
-        num_rows="dynamic",
-        key="base_restock_editor",
-    )
+  # Form မပါတော့ဘဲ data_editor ကို တိုက်ရိုက်သုံးထားခြင်း (တစ်ခါတည်း ချက်ချင်း update ဖြစ်ရန်)
+  edited_base_restock = st.data_editor(
+      df_base_restock,
+      use_container_width=True,
+      hide_index=True,
+      num_rows="dynamic",
+      key="base_restock_editor",
+  )
 
-    submitted = st.form_submit_button(
-        "💾 Save Changes (အပြောင်းအလဲများကို သိမ်းမည်)", type="primary"
-    )
+  if st.button("💾 Save Changes (အပြောင်းအလဲများကို သိမ်းမည်)", type="primary"):
+    if edited_base_restock is not None:
+      for r_ord in st.session_state.restock_orders:
+        o_id = r_ord["order_id"]
+        matching_rows = edited_base_restock[
+            edited_base_restock["Restock ID"] == o_id
+        ]
+        if not matching_rows.empty:
+          updated_ord_items = []
+          for idx, row in matching_rows.iterrows():
+            code = (
+                str(row["Item Code"])
+                if pd.notna(row["Item Code"]) and str(row["Item Code"]).strip() != ""
+                else f"HNB-{idx+201}"
+            )
+            desc = (
+                str(row["Item Description"])
+                if pd.notna(row["Item Description"])
+                else "New Item"
+            )
+            qty = int(row["Qty"]) if pd.notna(row["Qty"]) else 0
+            price = float(row["Price"]) if pd.notna(row["Price"]) else 0.0
+            cargo = float(row["Cargo"]) if pd.notna(row["Cargo"]) else 0.0
 
-    if submitted:
-      if edited_base_restock is not None:
-        for r_ord in st.session_state.restock_orders:
-          o_id = r_ord["order_id"]
-          matching_rows = edited_base_restock[
-              edited_base_restock["Restock ID"] == o_id
-          ]
-          if not matching_rows.empty:
-            updated_ord_items = []
-            for _, row in matching_rows.iterrows():
-              updated_ord_items.append({
-                  "Item Code": (
-                      str(row["Item Code"])
-                      if pd.notna(row["Item Code"])
-                      else "HNB-999"
-                  ),
-                  "Item Description": (
-                      str(row["Item Description"])
-                      if pd.notna(row["Item Description"])
-                      else "New Item"
-                  ),
-                  "Qty": int(row["Qty"]) if pd.notna(row["Qty"]) else 0,
-                  "Price": (
-                      float(row["Price"]) if pd.notna(row["Price"]) else 0.0
-                  ),
-                  "Cargo": (
-                      float(row["Cargo"]) if pd.notna(row["Cargo"]) else 0.0
-                  ),
-              })
-            r_ord["items"] = updated_ord_items
+            updated_ord_items.append({
+                "Item Code": code,
+                "Item Description": desc,
+                "Qty": qty,
+                "Price": price,
+                "Cargo": cargo,
+            })
+          r_ord["items"] = updated_ord_items
         save_restock_to_firebase()
-        st.success("အပြောင်းအလဲများကို အောင်မြင်စွာ သိမ်းဆည်းပြီးပါပြီ!")
-        st.rerun()
+      st.success("အပြောင်းအလဲများကို အောင်မြင်စွာ သိမ်းဆည်းပြီးပါပြီ!")
+      st.rerun()
 else:
   st.info("တည်းဖြတ်ရန် Restock စာရင်းများ မရှိသေးပါ။")
 
