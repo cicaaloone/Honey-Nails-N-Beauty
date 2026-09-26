@@ -32,6 +32,21 @@ except Exception as e:
 
 current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+# အကယ်၍ Firebase ထဲမှာ ဒေတာမရှိတော့ရင် လုံးဝအလွတ် (Blank row with 0) သာ ပြရန်
+if not inventory_list:
+  inventory_list = [
+      {
+          "Item Code": "",
+          "Item Description": "",
+          "Current Qty": 0,
+          "Buying Price (¥)": 0.0,
+          "Selling Price (Ks)": 0.0,
+          "Selling Price (¥)": 0.0,
+          "Cargo Deli Fee": 0.0,
+          "Time": current_time,
+      }
+  ]
+
 # အကယ်၍ Firebase ထဲမှာ ဒေတာမရှိသေးရင် Default အနေနဲ့ 0 တွေနဲ့ အလွတ်ဖြစ်စေရန်
 if not inventory_list:
   inventory_list = [
