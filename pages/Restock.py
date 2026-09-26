@@ -132,22 +132,32 @@ def show_restock_dialog(order):
 
       col_info1, col_info2 = st.columns(2)
       with col_info1:
-        st.write(f"**Supplier:** {order['supplier']}")
-        st.write(f"**Date & Time:** {order['time']}")
+        st.write(f"**Supplier:** {order.get('supplier', '')}")
+        st.write(f"**Date & Time:** {order.get('time', '')}")
       with col_info2:
-        st.write(f"**Restock ID:** {order['order_id']}")
+        st.write(f"**Restock ID:** {order.get('order_id', '')}")
 
       st.markdown("---")
 
       raw_items = order.get("items", [])
       formatted_items = []
       for itm in raw_items:
-        t_price = itm.get("Total Price", 0)
-        d_fee = itm.get("Deli Fee", 0)
+        t_price = (
+            float(itm.get("Total Price", 0))
+            if pd.notna(itm.get("Total Price", 0))
+            else 0.0
+        )
+        d_fee = (
+            float(itm.get("Deli Fee", 0))
+            if pd.notna(itm.get("Deli Fee", 0))
+            else 0.0
+        )
+        q_val = int(itm.get("Qty", 0)) if pd.notna(itm.get("Qty", 0)) else 0
+
         formatted_items.append({
             "Item Code": itm.get("Item Code", "HNB-000"),
             "Item Description": itm.get("Item Description", "New Item"),
-            "Qty": itm.get("Qty", 0),
+            "Qty": q_val,
             "Total Price": t_price,
             "Deli Fee": d_fee,
         })
@@ -157,6 +167,8 @@ def show_restock_dialog(order):
         df_items["Total Price"] = 0.0
       if "Deli Fee" not in df_items.columns:
         df_items["Deli Fee"] = 0.0
+      if "Qty" not in df_items.columns:
+        df_items["Qty"] = 0
 
       df_items["Total Cost"] = (
           df_items["Qty"] * df_items["Total Price"]
@@ -365,15 +377,21 @@ if st.session_state.restock_orders:
   all_restock_items = []
   for r_ord in st.session_state.restock_orders:
     for itm in r_ord.get("items", []):
-      t_price = itm.get("Total Price", 0)
-      d_fee = itm.get("Deli Fee", 0.0)
+      t_price = (
+          float(itm.get("Total Price", 0))
+          if pd.notna(itm.get("Total Price", 0))
+          else 0.0
+      )
+      d_fee = float(itm.get("Deli Fee", 0.0)) if pd.notna(itm.get("Deli Fee", 0.0)) else 0.0
+      q_val = int(itm.get("Qty", 0)) if pd.notna(itm.get("Qty", 0)) else 0
+
       all_restock_items.append({
           "Restock ID": r_ord.get("order_id"),
           "Supplier": r_ord.get("supplier"),
           "Time": r_ord.get("time"),
           "Item Code": itm.get("Item Code", "HNB-000"),
           "Item Description": itm.get("Item Description", "New Item"),
-          "Qty": itm.get("Qty", 0),
+          "Qty": q_val,
           "Total Price": t_price,
           "Deli Fee": d_fee,
       })
@@ -427,8 +445,8 @@ if st.session_state.restock_orders:
       st.rerun()
 else:
   st.info(
-    "💡 တည်းဖြတ်ရန် Restock စာရင်းများ မရှိသေးပါ။ အထက်ပါ **'+ New Order'**"
-    " ကိုနှိပ်၍ Order အသစ်အရင်ဖန်တီးပါ။"
+      "💡 တည်းဖြတ်ရန် Restock စာရင်းများ မရှိသေးပါ။ အထက်ပါ **'+ New Order'**"
+      " ကိုနှိပ်၍ Order အသစ်အရင်ဖန်တီးပါ။"
   )
 
 # Search / Filter လုပ်ရန် UI ပိုင်း
