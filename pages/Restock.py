@@ -22,7 +22,6 @@ if "restock_orders" not in st.session_state:
     loaded_orders = []
     for doc in docs:
       data = doc.to_dict()
-      # items မပါလာရင် ဒါမှမဟုတ် အလွတ်ဖြစ်နေရင် default တစ်ခုထည့်ပေးရန်
       if not data.get("items"):
         data["items"] = [{
             "Item Code": "HNB-000",
@@ -185,9 +184,7 @@ def show_restock_dialog(order):
         })
 
       df_items = pd.DataFrame(formatted_items)
-      df_items["Total Cost"] = (
-          df_items["Qty"] * df_items["Total Price"]
-      ) + df_items["Deli Fee"]
+      df_items["Total Cost"] = df_items["Total Price"] + df_items["Deli Fee"]
 
       df_items = df_items[[
           "Item Code",
@@ -243,7 +240,7 @@ def show_restock_dialog(order):
         save_restock_to_firebase()
         update_inventory_stock_on_restock(updated_items)
 
-      total_items_cost = (edited_df["Qty"] * edited_df["Total Price"]).sum()
+      total_items_cost = edited_df["Total Price"].sum()
       total_deli_fee = edited_df["Deli Fee"].sum()
       total_cost = total_items_cost + total_deli_fee
 
@@ -413,6 +410,7 @@ if st.session_state.restock_orders:
           else 0.0
       )
       q_val = int(itm.get("Qty", 0)) if pd.notna(itm.get("Qty", 0)) else 0
+      tot_cost = t_price + d_fee  # Total Cost = Total Price + Deli Fee
 
       all_restock_items.append({
           "Restock ID": r_ord.get("order_id"),
@@ -423,6 +421,7 @@ if st.session_state.restock_orders:
           "Qty": q_val,
           "Total Price": t_price,
           "Deli Fee": d_fee,
+          "Total Cost": tot_cost,
       })
 
   df_base_restock = pd.DataFrame(all_restock_items)
@@ -527,21 +526,16 @@ if filtered_orders:
   for index, ord_data in enumerate(filtered_orders):
     items_list = ord_data.get("items", [])
     items_df = pd.DataFrame(items_list) if items_list else pd.DataFrame()
-    if not items_df.empty and "Qty" in items_df.columns:
-      tp_col = (
-          "Total Price"
-          if "Total Price" in items_df.columns
-          else items_df.columns[3]
-      )
+    if not items_df.empty and "Total Price" in items_df.columns:
+      tp_col = "Total Price"
       df_tp = pd.to_numeric(items_df[tp_col], errors="coerce").fillna(0)
-      df_qty = pd.to_numeric(items_df["Qty"], errors="coerce").fillna(0)
 
       deli_col = (
           "Deli Fee" if "Deli Fee" in items_df.columns else items_df.columns[4]
       )
       df_deli = pd.to_numeric(items_df[deli_col], errors="coerce").fillna(0.0)
 
-      tot_cost = ((df_qty * df_tp) + df_deli).sum()
+      tot_cost = (df_tp + df_deli).sum()
     else:
       tot_cost = 0.0
 
