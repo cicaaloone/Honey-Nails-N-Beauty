@@ -53,19 +53,12 @@ if "permissions" not in st.session_state:
 if "inventory_items" not in st.session_state:
   st.session_state.inventory_items = [
       {
-          "Item Code": "HNB-001",
-          "Item Description": "Nail Polish Gel",
-          "Buying Price (¥)": 50,
-          "Selling Price (Ks)": 25000,
-          "Stock Qty": 20,
-      },
-      {
-          "Item Code": "HNB-002",
-          "Item Description": "B.O Matte Top Coat",
-          "Buying Price (¥)": 30,
-          "Selling Price (Ks)": 15000,
-          "Stock Qty": 15,
-      },
+          "Item Code": "",
+          "Item Description": "",
+          "Buying Price (¥)": 0,
+          "Selling Price (Ks)": 0,
+          "Stock Qty": 0,
+      }
   ]
 
 # --- LOGIN SCREEN ---

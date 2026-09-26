@@ -32,34 +32,24 @@ except Exception as e:
 
 current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-# အကယ်၍ Firebase ထဲမှာ ဒေတာမရှိသေးရင် Base Inventory ထည့်ရန်
+# အကယ်၍ Firebase ထဲမှာ ဒေတာမရှိသေးရင် Default အနေနဲ့ 0 တွေနဲ့ အလွတ်ဖြစ်စေရန်
 if not inventory_list:
   inventory_list = [
       {
-          "Item Code": "HNB-001",
-          "Item Description": "Nail Polish Gel",
-          "Current Qty": 50,
-          "Buying Price (¥)": 50.0,
-          "Selling Price (Ks)": 25000.0,
-          "Selling Price (¥)": 65.0,
-          "Cargo Deli Fee": 1000,
+          "Item Code": "",
+          "Item Description": "",
+          "Current Qty": 0,
+          "Buying Price (¥)": 0.0,
+          "Selling Price (Ks)": 0.0,
+          "Selling Price (¥)": 0.0,
+          "Cargo Deli Fee": 0.0,
           "Time": current_time,
-      },
-      {
-          "Item Code": "HNB-002",
-          "Item Description": "B.O Matte Top Coat",
-          "Current Qty": 30,
-          "Buying Price (¥)": 30.0,
-          "Selling Price (Ks)": 15000.0,
-          "Selling Price (¥)": 40.0,
-          "Cargo Deli Fee": 500,
-          "Time": current_time,
-      },
+      }
   ]
 
 df_inv = pd.DataFrame(inventory_list)
 
-# လိုအပ်သော Columns များ အစုံအလင် ပါဝင်စေရန် စစ်ဆေးခြင်း (Time Column ပါဝင်သည်)
+# လိုအပ်သော Columns များ အစုံအလင် ပါဝင်စေရန် စစ်ဆေးခြင်း
 desired_columns = [
     "Item Code",
     "Item Description",
@@ -106,7 +96,7 @@ if user_role == "Admin":
       # Firestore ထဲသို့ တစ်ခုချင်းစီ ပြန်လည်သိမ်းဆည်းခြင်း
       for _, row in edited_inv.iterrows():
         code = str(row["Item Code"])
-        if code and code != "nan":
+        if code and code != "nan" and code.strip() != "":
           db.collection("inventory").document(code).set({
               "Item Code": code,
               "Item Description": str(row["Item Description"]),
@@ -125,7 +115,7 @@ if user_role == "Admin":
               "Cargo Deli Fee": float(row["Cargo Deli Fee"])
               if pd.notna(row["Cargo Deli Fee"])
               else 0.0,
-              "Time": save_time,  # သိမ်းဆည်းသည့်အချိန်ကို ထည့်သွင်းခြင်း
+              "Time": save_time,
           })
       st.success(
           "Inventory အချက်အလက်များ Firebase Database သို့ အောင်မြင်စွာ"

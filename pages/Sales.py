@@ -272,17 +272,9 @@ def new_order_dialog():
 
   if st.button("Order အသစ် သိမ်းဆည်းမည်"):
     if customer:
-      default_items = [{
-          "Item Code": "HNB-001",
-          "Item Description": "Nail Polish Gel",
-          "Qty": 1,
-          "Price": 25000,
-          "Discount": 0,
-          "Tax": 0,
-      }]
-      default_total = sum(
-          i["Qty"] * i["Price"] - i["Discount"] + i["Tax"] for i in default_items
-      )
+      # ဒီနေရာတွင် Default ပစ္စည်းအဟောင်း မပါဘဲ အလွတ် (Blank list) ဖြစ်စေရန်
+      default_items = []
+      default_total = 0.0
 
       new_order = {
           "order_id": auto_order_id,
@@ -301,7 +293,6 @@ def new_order_dialog():
       st.rerun()
     else:
       st.warning("ကျေးဇူးပြု၍ Customer Name ထည့်ပါ။")
-
 
 # Delete Order Dialog
 @st.dialog("🗑️ Sales Order ဖျက်ရန်")
