@@ -19,7 +19,20 @@ st.sidebar.write(f"👤 User: {st.session_state.username}")
 if "restock_orders" not in st.session_state:
   try:
     docs = db.collection("restock_orders").stream()
-    st.session_state.restock_orders = [doc.to_dict() for doc in docs]
+    loaded_orders = []
+    for doc in docs:
+      data = doc.to_dict()
+      # items မပါလာရင် ဒါမှမဟုတ် အလွတ်ဖြစ်နေရင် default တစ်ခုထည့်ပေးရန်
+      if not data.get("items"):
+        data["items"] = [{
+            "Item Code": "HNB-000",
+            "Item Description": "New Item",
+            "Qty": 1,
+            "Total Price": 0.0,
+            "Deli Fee": 0.0,
+        }]
+      loaded_orders.append(data)
+    st.session_state.restock_orders = loaded_orders
   except Exception as e:
     st.session_state.restock_orders = []
 
@@ -140,6 +153,15 @@ def show_restock_dialog(order):
       st.markdown("---")
 
       raw_items = order.get("items", [])
+      if not raw_items:
+        raw_items = [{
+            "Item Code": "HNB-000",
+            "Item Description": "New Item",
+            "Qty": 1,
+            "Total Price": 0.0,
+            "Deli Fee": 0.0,
+        }]
+
       formatted_items = []
       for itm in raw_items:
         t_price = (
@@ -163,17 +185,6 @@ def show_restock_dialog(order):
         })
 
       df_items = pd.DataFrame(formatted_items)
-      if "Item Code" not in df_items.columns:
-        df_items["Item Code"] = "HNB-000"
-      if "Item Description" not in df_items.columns:
-        df_items["Item Description"] = "New Item"
-      if "Qty" not in df_items.columns:
-        df_items["Qty"] = 0
-      if "Total Price" not in df_items.columns:
-        df_items["Total Price"] = 0.0
-      if "Deli Fee" not in df_items.columns:
-        df_items["Deli Fee"] = 0.0
-
       df_items["Total Cost"] = (
           df_items["Qty"] * df_items["Total Price"]
       ) + df_items["Deli Fee"]
@@ -380,7 +391,17 @@ st.write(
 if st.session_state.restock_orders:
   all_restock_items = []
   for r_ord in st.session_state.restock_orders:
-    for itm in r_ord.get("items", []):
+    ord_items = r_ord.get("items", [])
+    if not ord_items:
+      ord_items = [{
+          "Item Code": "HNB-000",
+          "Item Description": "New Item",
+          "Qty": 1,
+          "Total Price": 0.0,
+          "Deli Fee": 0.0,
+      }]
+
+    for itm in ord_items:
       t_price = (
           float(itm.get("Total Price", 0))
           if pd.notna(itm.get("Total Price", 0))
@@ -504,17 +525,20 @@ if search_keyword.strip() != "":
 if filtered_orders:
   summary_data = []
   for index, ord_data in enumerate(filtered_orders):
-    items_df = pd.DataFrame(ord_data.get("items", []))
-    if not items_df.empty:
-      tp_col = "Total Price" if "Total Price" in items_df.columns else "Total Price"
-      if tp_col not in items_df.columns:
-        items_df[tp_col] = 0.0
+    items_list = ord_data.get("items", [])
+    items_df = pd.DataFrame(items_list) if items_list else pd.DataFrame()
+    if not items_df.empty and "Qty" in items_df.columns:
+      tp_col = (
+          "Total Price"
+          if "Total Price" in items_df.columns
+          else items_df.columns[3]
+      )
       df_tp = pd.to_numeric(items_df[tp_col], errors="coerce").fillna(0)
       df_qty = pd.to_numeric(items_df["Qty"], errors="coerce").fillna(0)
 
-      deli_col = "Deli Fee" if "Deli Fee" in items_df.columns else "Deli Fee"
-      if deli_col not in items_df.columns:
-        items_df[deli_col] = 0.0
+      deli_col = (
+          "Deli Fee" if "Deli Fee" in items_df.columns else items_df.columns[4]
+      )
       df_deli = pd.to_numeric(items_df[deli_col], errors="coerce").fillna(0.0)
 
       tot_cost = ((df_qty * df_tp) + df_deli).sum()
