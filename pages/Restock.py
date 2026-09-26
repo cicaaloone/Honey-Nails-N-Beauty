@@ -62,17 +62,6 @@ def update_inventory_stock_on_restock(items):
     st.error(f"❌ Stock အလိုအလျောက် တွက်ချက်ရာတွင် အမှားရှိပါသည်: {e}")
 
 
-# Helper Function: Firebase သို့ Restock Orders များ သိမ်းဆည်းရန်
-def save_restock_to_firebase():
-  try:
-    for order in st.session_state.restock_orders:
-      db.collection("restock_orders").document(str(order["order_id"])).set(
-          order
-      )
-  except Exception as e:
-    st.error(f"❌ Restock Orders သိမ်းဆည်းရာတွင် အမှားရှိပါသည်: {e}")
-
-
 # Helper Function: Data Editor မှ ပြောင်းလဲမှုများကို Order ထဲသို့ သိမ်းဆည်းရန် (on_change အတွက်)
 def handle_editor_change(order_id, editor_key):
   edited_data = st.session_state.get(editor_key)
@@ -82,20 +71,22 @@ def handle_editor_change(order_id, editor_key):
         updated_ord_items = []
         last_num = 0
         
-        # ပထမအကြိမ် ရှိပြီးသား code နံပါတ်များကို စစ်ဆေးရန်
+        # Firebase ထဲမှာရှိပြီးသား (သို့မဟုတ် အမှန်တကယ် သုံးနေတဲ့) HNB-00X ပုံစံ နံပါတ်များကိုသာ စစ်ဆေးရန်
         for _, row in edited_data.iterrows():
           c = str(row["Item Code"])
           if c.startswith("HNB-"):
             try:
               num = int(c.split("-")[1])
-              if num > last_num:
+              # အကယ်၍ နံပါတ်က ကြီးလွန်းနေရင် (ဥပမာ 100 ကျော်တွေ) အတုအယောင်လို့ သတ်မှတ်ပြီး ဖယ်ရှားရန်
+              if num < 100 and num > last_num:
                 last_num = num
             except:
               pass
 
         for _, row in edited_data.iterrows():
           raw_code = row["Item Code"]
-          if pd.notna(raw_code) and str(raw_code).strip() != "":
+          # အကယ်၍ Code ကွက်လပ်ဖြစ်နေရင် ဒါမှမဟုတ် 100 ကျော် Error Code ဖြစ်နေရင် အမှန်တကယ် နောက်ဆုံးနံပါတ်ကို +1 လုပ်ပေးမည်
+          if pd.notna(raw_code) and str(raw_code).strip() != "" and not (str(raw_code).startswith("HNB-") and int(str(raw_code).split("-")[1]) >= 100):
             code = str(raw_code).strip()
           else:
             last_num += 1
@@ -121,7 +112,6 @@ def handle_editor_change(order_id, editor_key):
         save_restock_to_firebase()
         update_inventory_stock_on_restock(updated_ord_items)
         break
-
 
 # 2. Restock Receipt Dialog
 @st.dialog("📥 Restock Receipt / ပစ္စည်းဝယ်ယူမှုပြေစာ", width="large")
