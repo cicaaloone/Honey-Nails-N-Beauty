@@ -2,7 +2,7 @@ import datetime
 import io
 import pandas as pd
 import streamlit as st
-from firebase_config import db  # firebase_config.py ထဲက db ကို ယူသုံးခြင်း
+from firebase_config import db
 
 st.set_page_config(
     page_title="Honey Nails 'n' Beauty - Restock Management", layout="wide"
@@ -50,7 +50,7 @@ def update_inventory_stock_on_restock(items):
       code = str(item.get("Item Code"))
       qty_to_add = int(item.get("Qty", 0))
 
-      if code and code != "nan":
+      if code and code != "nan" and code != "HNB-000":
         doc_ref = db.collection("inventory").document(code)
         doc = doc_ref.get()
 
@@ -67,59 +67,10 @@ def update_inventory_stock_on_restock(items):
               "Buying Price (¥)": 0.0,
               "Selling Price (Ks)": 0.0,
               "Selling Price (¥)": 0.0,
-              "Cargo Deli Fee": float(item.get("Cargo", 0.0)),
+              "Cargo Deli Fee": float(item.get("Deli Fee", 0.0)),
           })
   except Exception as e:
     st.error(f"❌ Stock အလိုအလျောက် တွက်ချက်ရာတွင် အမှားရှိပါသည်: {e}")
-
-
-# Helper Function: Data Editor မှ ပြောင်းလဲမှုများကို Order ထဲသို့ သိမ်းဆည်းရန် (on_change အတွက်)
-def handle_editor_change(order_id, editor_key):
-  edited_data = st.session_state.get(editor_key)
-  if edited_data is not None:
-    for r_ord in st.session_state.restock_orders:
-      if r_ord["order_id"] == order_id:
-        updated_ord_items = []
-        last_num = 0
-        
-        for _, row in edited_data.iterrows():
-          c = str(row["Item Code"])
-          if c.startswith("HNB-"):
-            try:
-              num = int(c.split("-")[1])
-              if num < 100 and num > last_num:
-                last_num = num
-            except:
-              pass
-
-        for _, row in edited_data.iterrows():
-          raw_code = row["Item Code"]
-          if pd.notna(raw_code) and str(raw_code).strip() != "" and not (str(raw_code).startswith("HNB-") and int(str(raw_code).split("-")[1]) >= 100):
-            code = str(raw_code).strip()
-          else:
-            last_num += 1
-            code = f"HNB-{last_num:03d}"
-
-          desc = (
-              str(row["Item Description"])
-              if pd.notna(row["Item Description"])
-              else "New Item"
-          )
-          qty = int(row["Qty"]) if pd.notna(row["Qty"]) else 0
-          price = float(row["Price"]) if pd.notna(row["Price"]) else 0.0
-          cargo = float(row["Cargo"]) if pd.notna(row["Cargo"]) else 0.0
-
-          updated_ord_items.append({
-              "Item Code": code,
-              "Item Description": desc,
-              "Qty": qty,
-              "Price": price,
-              "Cargo": cargo,
-          })
-        r_ord["items"] = updated_ord_items
-        save_restock_to_firebase()
-        update_inventory_stock_on_restock(updated_ord_items)
-        break
 
 
 # 2. Restock Receipt Dialog
@@ -188,20 +139,36 @@ def show_restock_dialog(order):
 
       st.markdown("---")
 
-      df_items = pd.DataFrame(order["items"])
-      if "Cargo" not in df_items.columns:
-        df_items["Cargo"] = 0.0
+      raw_items = order.get("items", [])
+      formatted_items = []
+      for itm in raw_items:
+        t_price = itm.get("Total Price", 0)
+        d_fee = itm.get("Deli Fee", 0)
+        formatted_items.append({
+            "Item Code": itm.get("Item Code", "HNB-000"),
+            "Item Description": itm.get("Item Description", "New Item"),
+            "Qty": itm.get("Qty", 0),
+            "Total Price": t_price,
+            "Deli Fee": d_fee,
+        })
 
-      df_items["Amount"] = (df_items["Qty"] * df_items["Price"]) + df_items[
-          "Cargo"
-      ]
+      df_items = pd.DataFrame(formatted_items)
+      if "Total Price" not in df_items.columns:
+        df_items["Total Price"] = 0.0
+      if "Deli Fee" not in df_items.columns:
+        df_items["Deli Fee"] = 0.0
+
+      df_items["Total Cost"] = (
+          df_items["Qty"] * df_items["Total Price"]
+      ) + df_items["Deli Fee"]
+
       df_items = df_items[[
           "Item Code",
           "Item Description",
           "Qty",
-          "Price",
-          "Cargo",
-          "Amount",
+          "Total Price",
+          "Deli Fee",
+          "Total Cost",
       ]]
 
       editor_key = f"r_editor_{order['order_id']}"
@@ -217,34 +184,47 @@ def show_restock_dialog(order):
             hide_index=True,
             num_rows="dynamic",
             key=editor_key,
-            on_change=handle_editor_change,
-            args=(order["order_id"], editor_key),
         )
 
-        if editor_key in st.session_state:
-          current_df = st.session_state[editor_key]
-          if not current_df.empty:
-            if "Qty" in current_df.columns and "Price" in current_df.columns:
-              q = pd.to_numeric(current_df["Qty"], errors="coerce").fillna(0)
-              p = pd.to_numeric(current_df["Price"], errors="coerce").fillna(0.0)
-              c = pd.to_numeric(current_df["Cargo"], errors="coerce").fillna(0.0) if "Cargo" in current_df.columns else 0.0
-              total_items_cost = (q * p).sum()
-              total_cargo_fee = c.sum()
-              total_cost = total_items_cost + total_cargo_fee
-            else:
-              total_items_cost, total_cargo_fee, total_cost = 0, 0, 0
-          else:
-            total_items_cost, total_cargo_fee, total_cost = 0, 0, 0
-        else:
-          total_items_cost = (df_items["Qty"] * df_items["Price"]).sum()
-          total_cargo_fee = df_items["Cargo"].sum()
-          total_cost = total_items_cost + total_cargo_fee
+        updated_items = []
+        for _, row in edited_df.iterrows():
+          code = (
+              str(row["Item Code"])
+              if pd.notna(row["Item Code"]) and str(row["Item Code"]).strip() != ""
+              else "HNB-000"
+          )
+          desc = (
+              str(row["Item Description"])
+              if pd.notna(row["Item Description"])
+              else "New Item"
+          )
+          qty = int(row["Qty"]) if pd.notna(row["Qty"]) else 0
+          tot_price = (
+              float(row["Total Price"]) if pd.notna(row["Total Price"]) else 0.0
+          )
+          deli_fee = float(row["Deli Fee"]) if pd.notna(row["Deli Fee"]) else 0.0
+
+          updated_items.append({
+              "Item Code": code,
+              "Item Description": desc,
+              "Qty": qty,
+              "Total Price": tot_price,
+              "Deli Fee": deli_fee,
+          })
+
+        order["items"] = updated_items
+        save_restock_to_firebase()
+        update_inventory_stock_on_restock(updated_items)
+
+      total_items_cost = (edited_df["Qty"] * edited_df["Total Price"]).sum()
+      total_deli_fee = edited_df["Deli Fee"].sum()
+      total_cost = total_items_cost + total_deli_fee
 
       st.markdown("---")
       st.markdown(f"**ပစ္စည်းတန်ဖိုး စုစုပေါင်း:** {total_items_cost:,.0f} ကျပ်")
-      st.markdown(f"**စုစုပေါင်း Cargo Fee (ကားခ):** {total_cargo_fee:,.0f} ကျပ်")
+      st.markdown(f"**စုစုပေါင်း Deli Fee:** {total_deli_fee:,.0f} ကျပ်")
       st.markdown(
-          f"**စုစုပေါင်း ကျသင့်ငွေ (Cargo အပါအဝင်):** {total_cost:,.0f} ကျပ်"
+          f"**စုစုပေါင်း ကျသင့်ငွေ (Deli Fee အပါအဝင်):** {total_cost:,.0f} ကျပ်"
       )
 
       st.markdown("---")
@@ -307,9 +287,13 @@ def new_restock_dialog():
 
   if st.button("Restock Order အသစ် သိမ်းဆည်းမည်"):
     if supplier:
-      # ဒီနေရာမှာ Default ပစ္စည်းအဟောင်းကြီး မပါတော့ဘဲ အလွတ် (Blank list) ဖြစ်သွားပါမယ်
-      default_items = []
-      
+      default_items = [{
+          "Item Code": "HNB-000",
+          "Item Description": "New Item",
+          "Qty": 1,
+          "Total Price": 0.0,
+          "Deli Fee": 0.0,
+      }]
       new_restock = {
           "order_id": auto_id,
           "supplier": supplier,
@@ -374,36 +358,37 @@ st.markdown("---")
 st.markdown("---")
 st.subheader("📋 Base Restock Items & Pricing Editor")
 st.write(
-    "အောက်ပါ ဇယားတွင် Restock ပစ္စည်းအချက်အလက်များကို တည်းဖြတ်နိုင်ပြီး Enter ခေါက်သည်နှင့် ချက်ချင်း သိမ်းဆည်းသွားပါမည်။"
+    "အောက်ပါ ဇယားတွင် Restock ပစ္စည်းအချက်အလက်များကို တည်းဖြတ်ပြီး အပြောင်းအလဲများကို သိမ်းဆည်းပါ။"
 )
 
 if st.session_state.restock_orders:
   all_restock_items = []
   for r_ord in st.session_state.restock_orders:
     for itm in r_ord.get("items", []):
+      t_price = itm.get("Total Price", 0)
+      d_fee = itm.get("Deli Fee", 0.0)
       all_restock_items.append({
           "Restock ID": r_ord.get("order_id"),
           "Supplier": r_ord.get("supplier"),
           "Time": r_ord.get("time"),
-          "Item Code": itm.get("Item Code"),
-          "Item Description": itm.get("Item Description"),
-          "Qty": itm.get("Qty"),
-          "Price": itm.get("Price"),
-          "Cargo": itm.get("Cargo", 0.0),
+          "Item Code": itm.get("Item Code", "HNB-000"),
+          "Item Description": itm.get("Item Description", "New Item"),
+          "Qty": itm.get("Qty", 0),
+          "Total Price": t_price,
+          "Deli Fee": d_fee,
       })
 
   df_base_restock = pd.DataFrame(all_restock_items)
-  base_editor_key = "base_restock_editor_main"
 
   edited_base_restock = st.data_editor(
       df_base_restock,
       use_container_width=True,
       hide_index=True,
       num_rows="dynamic",
-      key=base_editor_key,
+      key="base_restock_editor",
   )
 
-  if st.button("💾 Save All Changes (အပြောင်းအလဲအားလုံး သိမ်းမည်)", type="primary"):
+  if st.button("💾 Save Changes (အပြောင်းအလဲများကို သိမ်းမည်)", type="primary"):
     if edited_base_restock is not None:
       for r_ord in st.session_state.restock_orders:
         o_id = r_ord["order_id"]
@@ -412,47 +397,39 @@ if st.session_state.restock_orders:
         ]
         if not matching_rows.empty:
           updated_ord_items = []
-          last_num = 0
           for _, row in matching_rows.iterrows():
-            c = str(row["Item Code"])
-            if c.startswith("HNB-"):
-              try:
-                num = int(c.split("-")[1])
-                if num < 100 and num > last_num:
-                  last_num = num
-              except:
-                pass
-
-          for _, row in matching_rows.iterrows():
-            raw_code = row["Item Code"]
-            if pd.notna(raw_code) and str(raw_code).strip() != "" and not (str(raw_code).startswith("HNB-") and int(str(raw_code).split("-")[1]) >= 100):
-              code = str(raw_code).strip()
-            else:
-              last_num += 1
-              code = f"HNB-{last_num:03d}"
-
+            code = (
+                str(row["Item Code"])
+                if pd.notna(row["Item Code"]) and str(row["Item Code"]).strip() != ""
+                else "HNB-000"
+            )
             desc = (
                 str(row["Item Description"])
                 if pd.notna(row["Item Description"])
                 else "New Item"
             )
             qty = int(row["Qty"]) if pd.notna(row["Qty"]) else 0
-            price = float(row["Price"]) if pd.notna(row["Price"]) else 0.0
-            cargo = float(row["Cargo"]) if pd.notna(row["Cargo"]) else 0.0
+            tot_price = (
+                float(row["Total Price"]) if pd.notna(row["Total Price"]) else 0.0
+            )
+            deli_fee = float(row["Deli Fee"]) if pd.notna(row["Deli Fee"]) else 0.0
 
             updated_ord_items.append({
                 "Item Code": code,
                 "Item Description": desc,
                 "Qty": qty,
-                "Price": price,
-                "Cargo": cargo,
+                "Total Price": tot_price,
+                "Deli Fee": deli_fee,
             })
           r_ord["items"] = updated_ord_items
         save_restock_to_firebase()
       st.success("အပြောင်းအလဲများကို အောင်မြင်စွာ သိမ်းဆည်းပြီးပါပြီ!")
       st.rerun()
 else:
-  st.info("တည်းဖြတ်ရန် Restock စာရင်းများ မရှိသေးပါ။")
+  st.info(
+    "💡 တည်းဖြတ်ရန် Restock စာရင်းများ မရှိသေးပါ။ အထက်ပါ **'+ New Order'**"
+    " ကိုနှိပ်၍ Order အသစ်အရင်ဖန်တီးပါ။"
+  )
 
 # Search / Filter လုပ်ရန် UI ပိုင်း
 st.markdown("---")
@@ -501,13 +478,20 @@ if search_keyword.strip() != "":
 if filtered_orders:
   summary_data = []
   for index, ord_data in enumerate(filtered_orders):
-    items_df = pd.DataFrame(ord_data["items"])
+    items_df = pd.DataFrame(ord_data.get("items", []))
     if not items_df.empty:
-      if "Cargo" not in items_df.columns:
-        items_df["Cargo"] = 0.0
-      tot_cost = (
-          (items_df["Qty"] * items_df["Price"]) + items_df["Cargo"]
-      ).sum()
+      tp_col = "Total Price" if "Total Price" in items_df.columns else "Total Price"
+      if tp_col not in items_df.columns:
+        items_df[tp_col] = 0.0
+      df_tp = pd.to_numeric(items_df[tp_col], errors="coerce").fillna(0)
+      df_qty = pd.to_numeric(items_df["Qty"], errors="coerce").fillna(0)
+
+      deli_col = "Deli Fee" if "Deli Fee" in items_df.columns else "Deli Fee"
+      if deli_col not in items_df.columns:
+        items_df[deli_col] = 0.0
+      df_deli = pd.to_numeric(items_df[deli_col], errors="coerce").fillna(0.0)
+
+      tot_cost = ((df_qty * df_tp) + df_deli).sum()
     else:
       tot_cost = 0.0
 
