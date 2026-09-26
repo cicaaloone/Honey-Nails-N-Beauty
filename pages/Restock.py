@@ -163,12 +163,16 @@ def show_restock_dialog(order):
         })
 
       df_items = pd.DataFrame(formatted_items)
+      if "Item Code" not in df_items.columns:
+        df_items["Item Code"] = "HNB-000"
+      if "Item Description" not in df_items.columns:
+        df_items["Item Description"] = "New Item"
+      if "Qty" not in df_items.columns:
+        df_items["Qty"] = 0
       if "Total Price" not in df_items.columns:
         df_items["Total Price"] = 0.0
       if "Deli Fee" not in df_items.columns:
         df_items["Deli Fee"] = 0.0
-      if "Qty" not in df_items.columns:
-        df_items["Qty"] = 0
 
       df_items["Total Cost"] = (
           df_items["Qty"] * df_items["Total Price"]
@@ -382,7 +386,11 @@ if st.session_state.restock_orders:
           if pd.notna(itm.get("Total Price", 0))
           else 0.0
       )
-      d_fee = float(itm.get("Deli Fee", 0.0)) if pd.notna(itm.get("Deli Fee", 0.0)) else 0.0
+      d_fee = (
+          float(itm.get("Deli Fee", 0.0))
+          if pd.notna(itm.get("Deli Fee", 0.0))
+          else 0.0
+      )
       q_val = int(itm.get("Qty", 0)) if pd.notna(itm.get("Qty", 0)) else 0
 
       all_restock_items.append({
