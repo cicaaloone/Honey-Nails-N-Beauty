@@ -127,7 +127,6 @@ def show_receipt_dialog(order):
                 "➕ ရွေးချယ်ထားသော ပစ္စည်းကို ဇယားသို့ ထည့်မည်",
                 key=f"add_btn_{order['order_id']}",
             ):
-              # [ပြင်ဆင်ချက်] Inventory ထဲက Item Code ကို တိုက်ရိုက် ရယူခြင်း
               code_to_add = str(
                   selected_item_data.get("Item Code", "HNB-001")
               )
@@ -140,7 +139,6 @@ def show_receipt_dialog(order):
                   "Tax": 0.0,
               })
 
-              # Firebase သို့ Sales Orders များ သိမ်းဆည်းခြင်း
               save_sales_to_firebase()
               st.success("ပစ္စည်း ထည့်ပြီးပါပြီ!")
               st.rerun(scope="fragment")
@@ -149,22 +147,27 @@ def show_receipt_dialog(order):
 
       st.markdown("---")
 
-      # DataFrame ပြင်ဆင်ခြင်း
+      # DataFrame ပြင်ဆင်ခြင်း (Items အလွတ်ဖြစ်နေပါက Error မတက်စေရန် စီစဉ်ခြင်း)
+      if not order.get("items"):
+        order["items"] = []
+
       df_items = pd.DataFrame(order["items"])
-      df_items["Amount"] = (
-          df_items["Qty"] * df_items["Price"]
-          - df_items.get("Discount", 0)
-          + df_items.get("Tax", 0)
-      )
-      df_items = df_items[[
-          "Item Code",
-          "Item Description",
-          "Qty",
-          "Price",
-          "Discount",
-          "Tax",
-          "Amount",
-      ]]
+      if not df_items.empty and "Qty" in df_items.columns and "Price" in df_items.columns:
+        df_items["Amount"] = (
+            df_items["Qty"] * df_items["Price"]
+            - df_items.get("Discount", 0)
+            + df_items.get("Tax", 0)
+        )
+      else:
+        df_items = pd.DataFrame(columns=[
+            "Item Code",
+            "Item Description",
+            "Qty",
+            "Price",
+            "Discount",
+            "Tax",
+            "Amount",
+        ])
 
       if st.session_state[print_mode_key]:
         st.info("💡 **Print View** သို့ ရောက်ရှိနေပါပြီ။")
@@ -206,11 +209,14 @@ def show_receipt_dialog(order):
         order["items"] = updated_items
         save_sales_to_firebase()
 
-      total_amount = (
-          edited_df["Qty"] * edited_df["Price"]
-          - edited_df.get("Discount", 0)
-          + edited_df.get("Tax", 0)
-      ).sum()
+      if not edited_df.empty and "Qty" in edited_df.columns and "Price" in edited_df.columns:
+        total_amount = (
+            edited_df["Qty"] * edited_df["Price"]
+            - edited_df.get("Discount", 0)
+            + edited_df.get("Tax", 0)
+        ).sum()
+      else:
+        total_amount = 0.0
 
       st.markdown("---")
 
@@ -241,9 +247,7 @@ def show_receipt_dialog(order):
       balance_due = total_amount - paid_amount
 
       st.markdown("---")
-      st.markdown(
-          f"**စုစုပေါင်းကျသင့်ငွေ:** {total_amount:,.0f} {curr_symbol}"
-      )
+      st.markdown(f"**စုစုပေါင်းကျသင့်ငွေ:** {total_amount:,.0f} {curr_symbol}")
       st.markdown(f"**ပေးချေပြီးငွေ:** {paid_amount:,.0f} {curr_symbol}")
       st.markdown(
           f"<span style='color:red; font-weight:bold;'>ကျန်ငွေ:</span>"
@@ -272,7 +276,6 @@ def new_order_dialog():
 
   if st.button("Order အသစ် သိမ်းဆည်းမည်"):
     if customer:
-      # ဒီနေရာတွင် Default ပစ္စည်းအဟောင်း မပါဘဲ အလွတ် (Blank list) ဖြစ်စေရန်
       default_items = []
       default_total = 0.0
 
@@ -285,14 +288,13 @@ def new_order_dialog():
       }
 
       st.session_state.sales_orders.append(new_order)
-
-      # Firebase သို့ သိမ်းဆည်းခြင်း
       save_sales_to_firebase()
 
       st.success("Order အသစ် အောင်မြင်စွာ ထည့်ပြီးပါပြီ!")
       st.rerun()
     else:
       st.warning("ကျေးဇူးပြု၍ Customer Name ထည့်ပါ။")
+
 
 # Delete Order Dialog
 @st.dialog("🗑️ Sales Order ဖျက်ရန်")
@@ -311,7 +313,6 @@ def delete_order_dialog():
         if ord["order_id"] != selected_id
     ]
 
-    # Firebase Firestore မှပါ ဖျက်ရန်
     try:
       db.collection("sales_orders").document(str(selected_id)).delete()
     except Exception as e:
@@ -354,12 +355,20 @@ with st.container(border=True):
 
   if "sales_orders" in st.session_state and st.session_state.sales_orders:
     for index, ord_data in enumerate(st.session_state.sales_orders):
-      items_df = pd.DataFrame(ord_data["items"])
-      tot = (
-          items_df["Qty"] * items_df["Price"]
-          - items_df.get("Discount", 0)
-          + items_df.get("Tax", 0)
-      ).sum()
+      items_list = ord_data.get("items", [])
+      if items_list:
+        items_df = pd.DataFrame(items_list)
+        if "Qty" in items_df.columns and "Price" in items_df.columns:
+          tot = (
+              items_df["Qty"] * items_df["Price"]
+              - items_df.get("Discount", 0)
+              + items_df.get("Tax", 0)
+          ).sum()
+        else:
+          tot = 0.0
+      else:
+        tot = 0.0
+
       paid = ord_data.get("paid_amount", tot)
       bal = tot - paid
 
@@ -409,12 +418,10 @@ with st.container(border=True):
     if all_sales_items:
       df_items = pd.DataFrame(all_sales_items)
 
-      # Item Code တူတာတွေကို Qty ပေါင်းပြီး Amount ကိုပါ ပေါင်းပေးခြင်း
       df_grouped = df_items.groupby(
           ["Item Code", "Item Description"], as_index=False
       ).agg({"Qty": "sum", "Price": "mean", "Amount": "sum"})
 
-      # အရောင်းရဆုံး အရေအတွက် (Qty) အများဆုံးကို ထိပ်ဆုံးမှာ ပြရန် Descending ဖြင့် Sort လုပ်ခြင်း
       df_grouped = df_grouped.sort_values(by="Qty", ascending=False)
 
       st.dataframe(df_grouped, use_container_width=True, hide_index=True)
