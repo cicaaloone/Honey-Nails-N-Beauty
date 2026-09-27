@@ -5,7 +5,9 @@ import streamlit as st
 from firebase_config import db
 
 st.set_page_config(
-    page_title="Honey Nails 'n' Beauty - Restock Management", layout="wide"
+    page_title="Honey Nails 'n' Beauty - Restock Management",
+    page_icon="logo.png",
+    layout="wide",
 )
 
 if not st.session_state.get("logged_in", False):
@@ -64,7 +66,6 @@ def update_inventory_stock_on_restock(items):
         if doc.exists:
           data = doc.to_dict()
           current_qty = int(data.get("Current Qty", 0)) if data else 0
-          # Restock ဇယားမှ Qty ကို လက်ရှိ Inventory ပမာဏနှင့် ပေါင်းမည် (သို့မဟုတ် လိုသလို ချိန်ညှိနိုင်သည်)
           new_qty = current_qty + qty_to_add
           doc_ref.update({
               "Current Qty": new_qty,
@@ -166,12 +167,17 @@ def show_restock_dialog(order):
         )
         q_val = int(itm.get("Qty", 0)) if pd.notna(itm.get("Qty", 0)) else 0
 
+        status_val = "ရောက်ပြီ" if d_fee > 0 else "မရောက်သေး"
+        remark_val = itm.get("Remark", "")
+
         formatted_items.append({
             "Item Code": itm.get("Item Code", "HNB-000"),
             "Item Description": itm.get("Item Description", "New Item"),
             "Qty": q_val,
             "Total Price": t_price,
             "Deli Fee": d_fee,
+            "Status": status_val,
+            "Remark": remark_val,
         })
 
       df_items = pd.DataFrame(formatted_items)
@@ -184,6 +190,8 @@ def show_restock_dialog(order):
             "Total Price",
             "Deli Fee",
             "Total Cost",
+            "Status",
+            "Remark",
         ]]
       else:
         df_items = pd.DataFrame(columns=[
@@ -193,6 +201,8 @@ def show_restock_dialog(order):
             "Total Price",
             "Deli Fee",
             "Total Cost",
+            "Status",
+            "Remark",
         ])
 
       editor_key = f"r_editor_{order['order_id']}"
@@ -202,10 +212,9 @@ def show_restock_dialog(order):
         st.dataframe(df_items, use_container_width=True, hide_index=True)
         edited_df = df_items
       else:
-        # ပစ္စည်းအသစ် ထည့်ရန် Form
         with st.form(key=f"add_item_form_{order['order_id']}"):
           st.markdown("##### ➕ ပစ္စည်းအသစ် ထည့်ရန်")
-          f_col1, f_col2, f_col3, f_col4, f_col5 = st.columns(5)
+          f_col1, f_col2, f_col3, f_col4, f_col5, f_col6 = st.columns(6)
           with f_col1:
             new_code = st.text_input("Item Code", value="HNB-")
           with f_col2:
@@ -216,6 +225,8 @@ def show_restock_dialog(order):
             new_tprice = st.number_input("Total Price", min_value=0.0, value=0.0)
           with f_col5:
             new_dfee = st.number_input("Deli Fee", min_value=0.0, value=0.0)
+          with f_col6:
+            new_remark = st.text_input("Remark (မှတ်ချက်)")
 
           submitted = st.form_submit_button("➕ ဤပစ္စည်းကို စာရင်းထဲသို့ ထည့်မည်")
           if submitted:
@@ -227,6 +238,7 @@ def show_restock_dialog(order):
                 "Qty": int(new_qty),
                 "Total Price": float(new_tprice),
                 "Deli Fee": float(new_dfee),
+                "Remark": new_remark,
             })
             save_restock_to_firebase()
             update_inventory_stock_on_restock(order["items"])
@@ -259,6 +271,11 @@ def show_restock_dialog(order):
               float(row["Total Price"]) if pd.notna(row["Total Price"]) else 0.0
           )
           deli_fee = float(row["Deli Fee"]) if pd.notna(row["Deli Fee"]) else 0.0
+          remark = (
+              str(row["Remark"])
+              if pd.notna(row["Remark"])
+              else ""
+          )
 
           updated_items.append({
               "Item Code": code,
@@ -266,6 +283,7 @@ def show_restock_dialog(order):
               "Qty": qty,
               "Total Price": tot_price,
               "Deli Fee": deli_fee,
+              "Remark": remark,
           })
 
         order["items"] = updated_items
@@ -429,6 +447,8 @@ if st.session_state.restock_orders:
       )
       q_val = int(itm.get("Qty", 0)) if pd.notna(itm.get("Qty", 0)) else 0
       tot_cost = t_price + d_fee
+      status_val = "ရောက်ပြီ" if d_fee > 0 else "မရောက်သေး"
+      remark_val = itm.get("Remark", "")
 
       all_restock_items.append({
           "Restock ID": r_ord.get("order_id"),
@@ -440,6 +460,8 @@ if st.session_state.restock_orders:
           "Total Price": t_price,
           "Deli Fee": d_fee,
           "Total Cost": tot_cost,
+          "Status": status_val,
+          "Remark": remark_val,
       })
 
   df_base_restock = pd.DataFrame(all_restock_items)
@@ -484,6 +506,11 @@ if st.session_state.restock_orders:
               deli_fee = (
                   float(row["Deli Fee"]) if pd.notna(row["Deli Fee"]) else 0.0
               )
+              remark = (
+                  str(row["Remark"])
+                  if pd.notna(row["Remark"])
+                  else ""
+              )
 
               updated_ord_items.append({
                   "Item Code": code,
@@ -491,10 +518,10 @@ if st.session_state.restock_orders:
                   "Qty": qty,
                   "Total Price": tot_price,
                   "Deli Fee": deli_fee,
+                  "Remark": remark,
               })
             r_ord["items"] = updated_ord_items
           save_restock_to_firebase()
-          # 💡 ဤနေရာတွင် Inventory database သို့ Description နှင့် Qty အပြောင်းအလဲကို ပါသွားအောင် ထည့်ပေးလိုက်ပါပြီ
           update_inventory_stock_on_restock(r_ord["items"])
 
         st.success(
