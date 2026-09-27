@@ -13,7 +13,7 @@ if not firebase_admin._apps:
 
 st.set_page_config(
     page_title="Honey Nails 'n' Beauty - Management System",
-    page_icon="🌸",
+    page_icon="logo.png",
     layout="wide",
     initial_sidebar_state="expanded",
 )
