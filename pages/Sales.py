@@ -147,7 +147,7 @@ def show_receipt_dialog(order):
 
       st.markdown("---")
 
-      # DataFrame ပြင်ဆင်ခြင်း (Items အလွတ်ဖြစ်နေပါက Error မတက်စေရန် စီစဉ်ခြင်း)
+      # DataFrame ပြင်ဆင်ခြင်း
       if not order.get("items"):
         order["items"] = []
 
@@ -175,12 +175,14 @@ def show_receipt_dialog(order):
         edited_df = df_items
       else:
         st.write("📋 **Receipt Items List (တည်းဖြတ်ရန်)**")
+        # rerun_on_change=True ထည့်သွင်းထားသဖြင့် တန်ဖိုးပြောင်းလိုက်သည်နှင့် ချက်ချင်း Update လုပ်ပေးမည်
         edited_df = st.data_editor(
             df_items,
             use_container_width=True,
             hide_index=True,
             num_rows="dynamic",
             key=f"editor_{order['order_id']}",
+            rerun_on_change=True,
         )
 
         # Inventory mapping dictionaries ဖန်တီးရန် (Two-way lookup)
@@ -208,10 +210,8 @@ def show_receipt_dialog(order):
               else ""
           )
 
-          # ၁။ Item Code ရိုက်ထားပြီး Description မရှိ သို့မဟုတ် New Item ဖြစ်နေလျှင် အော်တိုဖြည့်မည်
           if code and code in code_to_desc and (not desc or desc == "New Item"):
             desc = code_to_desc[code]
-          # ၂။ Description ရိုက်ထားပြီး Code မရှိ သို့မဟုတ် HNB-999 ဖြစ်နေလျှင် အော်တိုဖြည့်မည်
           elif desc and desc in desc_to_code and (not code or code == "HNB-999"):
             code = desc_to_code[desc]
 
