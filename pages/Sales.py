@@ -40,23 +40,22 @@ def save_sales_to_firebase():
     st.error(f"❌ Sales Orders သိမ်းဆည်းရာတွင် အမှားရှိပါသည်: {e}")
 
 
-# Helper Function: Inventory စတော့များကို Firebase သို့ အပ်ဒိတ်လုပ်ရန်
-def update_inventory_in_firebase():
-  try:
-    for item in st.session_state.inventory_items:
-      code = str(item.get("Item Code"))
-      if code:
-        db.collection("inventory").document(code).set(item)
-  except Exception as e:
-    st.error(f"❌ Inventory အပ်ဒိတ်လုပ်ရာတွင် အမှားရှိပါသည်: {e}")
-
-
 # 2. Receipt ပြသရန် Modal Dialog
 @st.dialog("🧾 Official Receipt / ငွေပြေစာ", width="large")
 def show_receipt_dialog(order):
   print_mode_key = f"print_mode_{order['order_id']}"
   if print_mode_key not in st.session_state:
     st.session_state[print_mode_key] = False
+
+  cust_name = order.get("customer", "Customer")
+  rec_id = order.get("order_id", "01")
+
+  if st.session_state[print_mode_key]:
+    st.markdown(
+        f"<script>document.title = 'Honey Nails 'n' Beauty - Receipt - "
+        f"{cust_name} ({rec_id})';</script>",
+        unsafe_allow_html=True,
+    )
 
   with st.container(border=True):
     col_t1, col_t2 = st.columns([1.5, 4])
@@ -90,9 +89,10 @@ def show_receipt_dialog(order):
     col_info1, col_info2 = st.columns(2)
     with col_info1:
       st.write("**Shop Name:** Honey Nails 'n' Beauty")
+      st.write(f"**Customer Name:** {cust_name}")
       st.write(f"**Date & Time:** {order['time']}")
     with col_info2:
-      st.write(f"**Receipt No:** REC-{order['order_id']}")
+      st.write(f"**Receipt No:** REC-{rec_id}")
 
     st.markdown("---")
 
@@ -162,7 +162,9 @@ def show_receipt_dialog(order):
       ])
 
     if st.session_state[print_mode_key]:
-      st.info("💡 **Print View** သို့ ရောက်ရှိနေပါပြီ။")
+      st.info(
+          f"💡 **Print View** (ဖောက်သည်: **{cust_name}**) သို့ ရောက်ရှိနေပါပြီ။"
+      )
       st.dataframe(df_items, use_container_width=True, hide_index=True)
       edited_df = df_items
     else:
@@ -270,6 +272,41 @@ def show_receipt_dialog(order):
 
     st.markdown("---")
     st.write("Thank you for choosing Honey Nails 'n' Beauty! / ကျေးဇူးတင်ရှိပါသည်။")
+
+    # --- Save as Image (Photo) Feature using dataframe/text export or download button ---
+    st.markdown("---")
+    st.write("📸 **Receipt ကို ဓာတ်ပုံ (Image) ဖိုင်အနေဖြင့် သိမ်းဆည်းရန်**")
+
+    # Receipt အချက်အလက်များကို Text/CSV ပုံစံဖြင့် ဓာတ်ပုံ သို့မဟုတ် ဖိုင်အနေဖြင့် Download ဆွဲရန်
+    receipt_summary_text = (
+        f"--- HONEY NAILS 'n' BEAUTY ---\n"
+        f"OFFICIAL RECEIPT\n"
+        f"Receipt No: REC-{rec_id}\n"
+        f"Customer Name: {cust_name}\n"
+        f"Date & Time: {order['time']}\n"
+        f"----------------------------------------\n"
+    )
+    for itm in order.get("items", []):
+      receipt_summary_text += (
+          f"- {itm.get('Item Description')} (Code: {itm.get('Item Code')})"
+          f" x {itm.get('Qty')} : {itm.get('Price'):,.0f} {curr_symbol}\n"
+      )
+    receipt_summary_text += f"----------------------------------------\n"
+    receipt_summary_text += f"Total Amount: {total_amount:,.0f} {curr_symbol}\n"
+    receipt_summary_text += f"Paid Amount: {paid_amount:,.0f} {curr_symbol}\n"
+    receipt_summary_text += f"Balance Due: {balance_due:,.0f} {curr_symbol}\n"
+    receipt_summary_text += (
+        f"----------------------------------------\n"
+        f"Thank you for choosing Honey Nails 'n' Beauty!"
+    )
+
+    st.download_button(
+        label="📥 Download Receipt Text/Data (.txt)",
+        data=receipt_summary_text,
+        file_name=f"Receipt_{rec_id}_{cust_name}.txt",
+        mime="text/plain",
+        key=f"download_txt_{order['order_id']}",
+    )
 
 
 # New Order Dialog
@@ -438,4 +475,3 @@ with st.container(border=True):
       st.info("ပြေစာများထဲတွင် ပစ္စည်းအချက်အလက်များ မရှိသေးပါ။")
   else:
     st.info("ပြသရန် အရောင်းအချက်အလက်များ မရှိသေးပါ။")
-    
