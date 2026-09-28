@@ -54,240 +54,222 @@ def update_inventory_in_firebase():
 # 2. Receipt ပြသရန် Modal Dialog
 @st.dialog("🧾 Official Receipt / ငွေပြေစာ", width="large")
 def show_receipt_dialog(order):
+  print_mode_key = f"print_mode_{order['order_id']}"
+  if print_mode_key not in st.session_state:
+    st.session_state[print_mode_key] = False
 
-  @st.fragment
-  def receipt_fragment():
-    print_mode_key = f"print_mode_{order['order_id']}"
-    if print_mode_key not in st.session_state:
-      st.session_state[print_mode_key] = False
-
-    with st.container(border=True):
-      col_t1, col_t2 = st.columns([1.5, 4])
-      with col_t1:
-        if st.session_state[print_mode_key]:
-          if st.button(
-              "✏️ Edit Mode သို့ ပြန်ရန်", key=f"btn_edit_{order['order_id']}"
-          ):
-            st.session_state[print_mode_key] = False
-            st.rerun(scope="fragment")
-        else:
-          if st.button(
-              "🖨️ Print View သို့ ပြောင်းမည်",
-              key=f"btn_pview_{order['order_id']}",
-              type="primary",
-          ):
-            st.session_state[print_mode_key] = True
-            st.rerun(scope="fragment")
-      st.markdown("---")
-
-      st.markdown(
-          "<h2 style='text-align: center; color: #78350f;'>Honey Nails 'n'"
-          " Beauty</h2>",
-          unsafe_allow_html=True,
-      )
-      st.markdown(
-          "<h4 style='text-align: center; color: #92400e;'>OFFICIAL RECEIPT /"
-          " ငွေပြေစာ</h4>",
-          unsafe_allow_html=True,
-      )
-      st.markdown("---")
-
-      col_info1, col_info2 = st.columns(2)
-      with col_info1:
-        st.write("**Shop Name:** Honey Nails 'n' Beauty")
-        st.write(f"**Date & Time:** {order['time']}")
-      with col_info2:
-        st.write(f"**Receipt No:** REC-{order['order_id']}")
-
-      st.markdown("---")
-
-      # Inventory မှ ပစ္စည်းများကို Select လုပ်၍ ထည့်ရန်
-      if not st.session_state[print_mode_key]:
-        st.markdown(
-            "💡 **Inventory မှ ပစ္စည်းအသစ် ထည့်သွင်းရန် (Suggestion /"
-            " Select)**"
-        )
-        if "inventory_items" in st.session_state and st.session_state[
-            "inventory_items"
-        ]:
-          inv_options = {
-              f"[{item['Item Code']}] {item['Item Description']} (Sell: {item.get('Selling Price (Ks)', 0):,.0f} Ks)": item
-              for item in st.session_state["inventory_items"]
-          }
-
-          selected_inv_label = st.selectbox(
-              "ပစ္စည်း ရွေးချယ်ပါ",
-              options=["-- ရွေးချယ်ရန် --"] + list(inv_options.keys()),
-              key=f"select_inv_{order['order_id']}",
-          )
-
-          if selected_inv_label != "-- ရွေးချယ်ရန် --":
-            selected_item_data = inv_options[selected_inv_label]
-            if st.button(
-                "➕ ရွေးချယ်ထားသော ပစ္စည်းကို ဇယားသို့ ထည့်မည်",
-                key=f"add_btn_{order['order_id']}",
-            ):
-              code_to_add = str(
-                  selected_item_data.get("Item Code", "HNB-001")
-              )
-              order["items"].append({
-                  "Item Code": code_to_add,
-                  "Item Description": selected_item_data["Item Description"],
-                  "Qty": 1,
-                  "Price": selected_item_data.get("Selling Price (Ks)", 0.0),
-                  "Discount": 0.0,
-                  "Tax": 0.0,
-              })
-
-              save_sales_to_firebase()
-              st.success("ပစ္စည်း ထည့်ပြီးပါပြီ!")
-              st.rerun(scope="fragment")
-        else:
-          st.warning("Inventory ထဲတွင် ပစ္စည်းများ မရှိသေးပါ။")
-
-      st.markdown("---")
-
-      # DataFrame ပြင်ဆင်ခြင်း
-      if not order.get("items"):
-        order["items"] = []
-
-      df_items = pd.DataFrame(order["items"])
-      if not df_items.empty and "Qty" in df_items.columns and "Price" in df_items.columns:
-        df_items["Amount"] = (
-            df_items["Qty"] * df_items["Price"]
-            - df_items.get("Discount", 0)
-            + df_items.get("Tax", 0)
-        )
-      else:
-        df_items = pd.DataFrame(columns=[
-            "Item Code",
-            "Item Description",
-            "Qty",
-            "Price",
-            "Discount",
-            "Tax",
-            "Amount",
-        ])
-
+  with st.container(border=True):
+    col_t1, col_t2 = st.columns([1.5, 4])
+    with col_t1:
       if st.session_state[print_mode_key]:
-        st.info("💡 **Print View** သို့ ရောက်ရှိနေပါပြီ။")
-        st.dataframe(df_items, use_container_width=True, hide_index=True)
-        edited_df = df_items
+        if st.button("✏️ Edit Mode သို့ ပြန်ရန်", key=f"btn_edit_{order['order_id']}"):
+          st.session_state[print_mode_key] = False
+          st.rerun()
       else:
-        st.write("📋 **Receipt Items List (တည်းဖြတ်ရန်)**")
-        # rerun_on_change=True ထည့်သွင်းထားသဖြင့် တန်ဖိုးပြောင်းလိုက်သည်နှင့် ချက်ချင်း Update လုပ်ပေးမည်
-        edited_df = st.data_editor(
-            df_items,
-            use_container_width=True,
-            hide_index=True,
-            num_rows="dynamic",
-            key=f"editor_{order['order_id']}",
-            rerun_on_change=True,
-        )
+        if st.button(
+            "🖨️ Print View သို့ ပြောင်းမည်",
+            key=f"btn_pview_{order['order_id']}",
+            type="primary",
+        ):
+          st.session_state[print_mode_key] = True
+          st.rerun()
+    st.markdown("---")
 
-        # Inventory mapping dictionaries ဖန်တီးရန် (Two-way lookup)
-        code_to_desc = {}
-        desc_to_code = {}
-        if "inventory_items" in st.session_state:
-          for inv_item in st.session_state["inventory_items"]:
-            c_str = str(inv_item.get("Item Code", "")).strip()
-            d_str = str(inv_item.get("Item Description", "")).strip()
-            if c_str:
-              code_to_desc[c_str] = d_str
-            if d_str:
-              desc_to_code[d_str] = c_str
+    st.markdown(
+        "<h2 style='text-align: center; color: #78350f;'>Honey Nails 'n'"
+        " Beauty</h2>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        "<h4 style='text-align: center; color: #92400e;'>OFFICIAL RECEIPT /"
+        " ငွေပြေစာ</h4>",
+        unsafe_allow_html=True,
+    )
+    st.markdown("---")
 
-        updated_items = []
-        for _, row in edited_df.iterrows():
-          code = (
-              str(row["Item Code"]).strip()
-              if pd.notna(row["Item Code"])
-              else ""
-          )
-          desc = (
-              str(row["Item Description"]).strip()
-              if pd.notna(row["Item Description"])
-              else ""
-          )
+    col_info1, col_info2 = st.columns(2)
+    with col_info1:
+      st.write("**Shop Name:** Honey Nails 'n' Beauty")
+      st.write(f"**Date & Time:** {order['time']}")
+    with col_info2:
+      st.write(f"**Receipt No:** REC-{order['order_id']}")
 
-          if code and code in code_to_desc and (not desc or desc == "New Item"):
-            desc = code_to_desc[code]
-          elif desc and desc in desc_to_code and (not code or code == "HNB-999"):
-            code = desc_to_code[desc]
+    st.markdown("---")
 
-          if not code:
-            code = "HNB-999"
-          if not desc:
-            desc = "New Item"
-
-          qty = int(row["Qty"]) if pd.notna(row["Qty"]) else 1
-          price = float(row["Price"]) if pd.notna(row["Price"]) else 0.0
-          discount = float(row["Discount"]) if pd.notna(row["Discount"]) else 0.0
-          tax = float(row["Tax"]) if pd.notna(row["Tax"]) else 0.0
-
-          updated_items.append({
-              "Item Code": code,
-              "Item Description": desc,
-              "Qty": qty,
-              "Price": price,
-              "Discount": discount,
-              "Tax": tax,
-          })
-        order["items"] = updated_items
-        save_sales_to_firebase()
-
-      if not edited_df.empty and "Qty" in edited_df.columns and "Price" in edited_df.columns:
-        total_amount = (
-            edited_df["Qty"] * edited_df["Price"]
-            - edited_df.get("Discount", 0)
-            + edited_df.get("Tax", 0)
-        ).sum()
-      else:
-        total_amount = 0.0
-
-      st.markdown("---")
-
-      input_col1, input_col2 = st.columns(2)
-      with input_col1:
-        currency_choice = st.selectbox(
-            "💱 Currency ရွေးချယ်ပါ",
-            ["ကျပ် (Ks)", "ယွမ် (¥)"],
-            key=f"curr_{order['order_id']}",
-        )
-        curr_symbol = "¥" if "ယွမ်" in currency_choice else "Ks"
-
-      with input_col2:
-        default_paid = order.get("paid_amount", total_amount)
-        paid_amount = st.number_input(
-            f"💵 ပေးချေပြီးငွေ ({curr_symbol})",
-            min_value=0.0,
-            max_value=float(total_amount if total_amount > 0 else 10000000.0),
-            value=float(
-                default_paid if default_paid <= total_amount else total_amount
-            ),
-            step=1000.0,
-            key=f"paid_input_{order['order_id']}",
-        )
-        order["paid_amount"] = paid_amount
-        save_sales_to_firebase()
-
-      balance_due = total_amount - paid_amount
-
-      st.markdown("---")
-      st.markdown(f"**စုစုပေါင်းကျသင့်ငွေ:** {total_amount:,.0f} {curr_symbol}")
-      st.markdown(f"**ပေးချေပြီးငွေ:** {paid_amount:,.0f} {curr_symbol}")
+    # Inventory မှ ပစ္စည်းများကို Select လုပ်၍ ထည့်ရန်
+    if not st.session_state[print_mode_key]:
       st.markdown(
-          f"<span style='color:red; font-weight:bold;'>ကျန်ငွေ:</span>"
-          f" {balance_due:,.0f} {curr_symbol}",
-          unsafe_allow_html=True,
+          "💡 **Inventory မှ ပစ္စည်းအသစ် ထည့်သွင်းရန် (Suggestion / Select)**"
+      )
+      if "inventory_items" in st.session_state and st.session_state[
+          "inventory_items"
+      ]:
+        inv_options = {
+            f"[{item['Item Code']}] {item['Item Description']} (Sell: {item.get('Selling Price (Ks)', 0):,.0f} Ks)": item
+            for item in st.session_state["inventory_items"]
+        }
+
+        selected_inv_label = st.selectbox(
+            "ပစ္စည်း ရွေးချယ်ပါ",
+            options=["-- ရွေးချယ်ရန် --"] + list(inv_options.keys()),
+            key=f"select_inv_{order['order_id']}",
+        )
+
+        if selected_inv_label != "-- ရွေးချယ်ရန် --":
+          selected_item_data = inv_options[selected_inv_label]
+          if st.button(
+              "➕ ရွေးချယ်ထားသော ပစ္စည်းကို ဇယားသို့ ထည့်မည်",
+              key=f"add_btn_{order['order_id']}",
+          ):
+            code_to_add = str(selected_item_data.get("Item Code", "HNB-001"))
+            order["items"].append({
+                "Item Code": code_to_add,
+                "Item Description": selected_item_data["Item Description"],
+                "Qty": 1,
+                "Price": selected_item_data.get("Selling Price (Ks)", 0.0),
+                "Discount": 0.0,
+                "Tax": 0.0,
+            })
+
+            save_sales_to_firebase()
+            st.success("ပစ္စည်း ထည့်ပြီးပါပြီ!")
+            st.rerun()
+      else:
+        st.warning("Inventory ထဲတွင် ပစ္စည်းများ မရှိသေးပါ။")
+
+    st.markdown("---")
+
+    # DataFrame ပြင်ဆင်ခြင်း
+    if not order.get("items"):
+      order["items"] = []
+
+    df_items = pd.DataFrame(order["items"])
+    if not df_items.empty and "Qty" in df_items.columns and "Price" in df_items.columns:
+      df_items["Amount"] = (
+          df_items["Qty"] * df_items["Price"]
+          - df_items.get("Discount", 0)
+          + df_items.get("Tax", 0)
+      )
+    else:
+      df_items = pd.DataFrame(columns=[
+          "Item Code",
+          "Item Description",
+          "Qty",
+          "Price",
+          "Discount",
+          "Tax",
+          "Amount",
+      ])
+
+    if st.session_state[print_mode_key]:
+      st.info("💡 **Print View** သို့ ရောက်ရှိနေပါပြီ။")
+      st.dataframe(df_items, use_container_width=True, hide_index=True)
+      edited_df = df_items
+    else:
+      st.write("📋 **Receipt Items List (တည်းဖြတ်ရန်)**")
+      edited_df = st.data_editor(
+          df_items,
+          use_container_width=True,
+          hide_index=True,
+          num_rows="dynamic",
+          key=f"editor_{order['order_id']}",
       )
 
-      st.markdown("---")
-      st.write(
-          "Thank you for choosing Honey Nails 'n' Beauty! / ကျေးဇူးတင်ရှိပါသည်။"
-      )
+      # Inventory mapping dictionaries ဖန်တီးရန် (Two-way lookup)
+      code_to_desc = {}
+      desc_to_code = {}
+      if "inventory_items" in st.session_state:
+        for inv_item in st.session_state["inventory_items"]:
+          c_str = str(inv_item.get("Item Code", "")).strip()
+          d_str = str(inv_item.get("Item Description", "")).strip()
+          if c_str:
+            code_to_desc[c_str] = d_str
+          if d_str:
+            desc_to_code[d_str] = c_str
 
-  receipt_fragment()
+      updated_items = []
+      for _, row in edited_df.iterrows():
+        code = str(row["Item Code"]).strip() if pd.notna(row["Item Code"]) else ""
+        desc = (
+            str(row["Item Description"]).strip()
+            if pd.notna(row["Item Description"])
+            else ""
+        )
+
+        if code and code in code_to_desc and (not desc or desc == "New Item"):
+          desc = code_to_desc[code]
+        elif desc and desc in desc_to_code and (not code or code == "HNB-999"):
+          code = desc_to_code[desc]
+
+        if not code:
+          code = "HNB-999"
+        if not desc:
+          desc = "New Item"
+
+        qty = int(row["Qty"]) if pd.notna(row["Qty"]) else 1
+        price = float(row["Price"]) if pd.notna(row["Price"]) else 0.0
+        discount = float(row["Discount"]) if pd.notna(row["Discount"]) else 0.0
+        tax = float(row["Tax"]) if pd.notna(row["Tax"]) else 0.0
+
+        updated_items.append({
+            "Item Code": code,
+            "Item Description": desc,
+            "Qty": qty,
+            "Price": price,
+            "Discount": discount,
+            "Tax": tax,
+        })
+      order["items"] = updated_items
+      save_sales_to_firebase()
+
+    if not edited_df.empty and "Qty" in edited_df.columns and "Price" in edited_df.columns:
+      total_amount = (
+          edited_df["Qty"] * edited_df["Price"]
+          - edited_df.get("Discount", 0)
+          + edited_df.get("Tax", 0)
+      ).sum()
+    else:
+      total_amount = 0.0
+
+    st.markdown("---")
+
+    input_col1, input_col2 = st.columns(2)
+    with input_col1:
+      currency_choice = st.selectbox(
+          "💱 Currency ရွေးချယ်ပါ",
+          ["ကျပ် (Ks)", "ယွမ် (¥)"],
+          key=f"curr_{order['order_id']}",
+      )
+      curr_symbol = "¥" if "ယွမ်" in currency_choice else "Ks"
+
+    with input_col2:
+      default_paid = order.get("paid_amount", total_amount)
+      paid_amount = st.number_input(
+          f"💵 ပေးချေပြီးငွေ ({curr_symbol})",
+          min_value=0.0,
+          max_value=float(total_amount if total_amount > 0 else 10000000.0),
+          value=float(
+              default_paid if default_paid <= total_amount else total_amount
+          ),
+          step=1000.0,
+          key=f"paid_input_{order['order_id']}",
+      )
+      order["paid_amount"] = paid_amount
+      save_sales_to_firebase()
+
+    balance_due = total_amount - paid_amount
+
+    st.markdown("---")
+    st.markdown(f"**စုစုပေါင်းကျသင့်ငွေ:** {total_amount:,.0f} {curr_symbol}")
+    st.markdown(f"**ပေးချေပြီးငွေ:** {paid_amount:,.0f} {curr_symbol}")
+    st.markdown(
+        f"<span style='color:red; font-weight:bold;'>ကျန်ငွေ:</span>"
+        f" {balance_due:,.0f} {curr_symbol}",
+        unsafe_allow_html=True,
+    )
+
+    st.markdown("---")
+    st.write("Thank you for choosing Honey Nails 'n' Beauty! / ကျေးဇူးတင်ရှိပါသည်။")
 
 
 # New Order Dialog
@@ -456,3 +438,4 @@ with st.container(border=True):
       st.info("ပြေစာများထဲတွင် ပစ္စည်းအချက်အလက်များ မရှိသေးပါ။")
   else:
     st.info("ပြသရန် အရောင်းအချက်အလက်များ မရှိသေးပါ။")
+    
