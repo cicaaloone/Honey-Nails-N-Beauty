@@ -183,16 +183,43 @@ def show_receipt_dialog(order):
             key=f"editor_{order['order_id']}",
         )
 
+        # Inventory mapping dictionaries ဖန်တီးရန် (Two-way lookup)
+        code_to_desc = {}
+        desc_to_code = {}
+        if "inventory_items" in st.session_state:
+          for inv_item in st.session_state["inventory_items"]:
+            c_str = str(inv_item.get("Item Code", "")).strip()
+            d_str = str(inv_item.get("Item Description", "")).strip()
+            if c_str:
+              code_to_desc[c_str] = d_str
+            if d_str:
+              desc_to_code[d_str] = c_str
+
         updated_items = []
         for _, row in edited_df.iterrows():
           code = (
-              str(row["Item Code"]) if pd.notna(row["Item Code"]) else "HNB-999"
+              str(row["Item Code"]).strip()
+              if pd.notna(row["Item Code"])
+              else ""
           )
           desc = (
-              str(row["Item Description"])
+              str(row["Item Description"]).strip()
               if pd.notna(row["Item Description"])
-              else "New Item"
+              else ""
           )
+
+          # ၁။ Item Code ရိုက်ထားပြီး Description မရှိ သို့မဟုတ် New Item ဖြစ်နေလျှင် အော်တိုဖြည့်မည်
+          if code and code in code_to_desc and (not desc or desc == "New Item"):
+            desc = code_to_desc[code]
+          # ၂။ Description ရိုက်ထားပြီး Code မရှိ သို့မဟုတ် HNB-999 ဖြစ်နေလျှင် အော်တိုဖြည့်မည်
+          elif desc and desc in desc_to_code and (not code or code == "HNB-999"):
+            code = desc_to_code[desc]
+
+          if not code:
+            code = "HNB-999"
+          if not desc:
+            desc = "New Item"
+
           qty = int(row["Qty"]) if pd.notna(row["Qty"]) else 1
           price = float(row["Price"]) if pd.notna(row["Price"]) else 0.0
           discount = float(row["Discount"]) if pd.notna(row["Discount"]) else 0.0
