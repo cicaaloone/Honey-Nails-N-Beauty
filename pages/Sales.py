@@ -60,6 +60,7 @@ def show_receipt_dialog(order):
   with st.container(border=True):
     col_t1, col_t2 = st.columns([1.5, 4])
     with col_t1:
+      # Dialog မပိတ်သွားစေရန် st.rerun() အစား st.rerun(scope="app") (သို့) state ပြောင်းလဲရုံဖြင့် ဆောင်ရွက်ခြင်း
       if st.session_state[print_mode_key]:
         if st.button("✏️ Edit Mode သို့ ပြန်ရန်", key=f"btn_edit_{order['order_id']}"):
           st.session_state[print_mode_key] = False
@@ -273,11 +274,9 @@ def show_receipt_dialog(order):
     st.markdown("---")
     st.write("Thank you for choosing Honey Nails 'n' Beauty! / ကျေးဇူးတင်ရှိပါသည်။")
 
-    # --- Save as Image (Photo) Feature using dataframe/text export or download button ---
     st.markdown("---")
-    st.write("📸 **Receipt ကို ဓာတ်ပုံ (Image) ဖိုင်အနေဖြင့် သိမ်းဆည်းရန်**")
+    st.write("📸 **Receipt Data သိမ်းဆည်းရန်**")
 
-    # Receipt အချက်အလက်များကို Text/CSV ပုံစံဖြင့် ဓာတ်ပုံ သို့မဟုတ် ဖိုင်အနေဖြင့် Download ဆွဲရန်
     receipt_summary_text = (
         f"--- HONEY NAILS 'n' BEAUTY ---\n"
         f"OFFICIAL RECEIPT\n"
@@ -301,7 +300,7 @@ def show_receipt_dialog(order):
     )
 
     st.download_button(
-        label="📥 Download Receipt Text/Data (.txt)",
+        label="📥 Download Receipt Data (.txt)",
         data=receipt_summary_text,
         file_name=f"Receipt_{rec_id}_{cust_name}.txt",
         mime="text/plain",
