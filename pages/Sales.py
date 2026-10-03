@@ -2,7 +2,7 @@ import datetime
 import io
 import pandas as pd
 import streamlit as st
-from firebase_config import db  # firebase_config.py ထဲက db ကို ယူသုံးခြင်း
+from firebase_config import db
 
 st.set_page_config(
     page_title="Honey Nails 'n' Beauty - Sales Order & Receipt", layout="wide"
@@ -14,7 +14,6 @@ if not st.session_state.get("logged_in", False):
 
 st.sidebar.write(f"👤 User: {st.session_state.username}")
 
-# 1. Firebase မှ Inventory ဒေတာများကို ဖတ်ယူခြင်း (Session State ထဲသို့ ထည့်ရန်)
 if "inventory_items" not in st.session_state:
   try:
     docs = db.collection("inventory").stream()
@@ -22,7 +21,6 @@ if "inventory_items" not in st.session_state:
   except Exception as e:
     st.session_state.inventory_items = []
 
-# Firebase မှ Sales Orders များကို ဖတ်ယူခြင်း
 if "sales_orders" not in st.session_state:
   try:
     s_docs = db.collection("sales_orders").stream()
@@ -31,7 +29,6 @@ if "sales_orders" not in st.session_state:
     st.session_state.sales_orders = []
 
 
-# Helper Function: Firebase သို့ Sales Orders များ သိမ်းဆည်းရန်
 def save_sales_to_firebase():
   try:
     for order in st.session_state.sales_orders:
@@ -40,7 +37,6 @@ def save_sales_to_firebase():
     st.error(f"❌ Sales Orders သိမ်းဆည်းရာတွင် အမှားရှိပါသည်: {e}")
 
 
-# 2. Receipt ပြသရန် Modal Dialog
 @st.dialog("🧾 Official Receipt / ငွေပြေစာ", width="large")
 def show_receipt_dialog(order):
   print_mode_key = f"print_mode_{order['order_id']}"
@@ -60,14 +56,13 @@ def show_receipt_dialog(order):
   with st.container(border=True):
     col_t1, col_t2 = st.columns([1.5, 4])
     with col_t1:
-      # Dialog မပိတ်သွားစေရန် st.rerun() အစား st.rerun(scope="app") (သို့) state ပြောင်းလဲရုံဖြင့် ဆောင်ရွက်ခြင်း
       if st.session_state[print_mode_key]:
-        if st.button("✏️ Edit Mode သို့ ပြန်ရန်", key=f"btn_edit_{order['order_id']}"):
+        if st.button("✏️ Edit Mode သို့ ပြန်ရန်", key=f"btn_edit_{order['order_id']}`"):
           st.session_state[print_mode_key] = False
           st.rerun()
       else:
         if st.button(
-            "🖨️ Print View သို့ ပြောင်းမည်",
+            "🖨️️ Print View သို့ ပြောင်းမည်",
             key=f"btn_pview_{order['order_id']}",
             type="primary",
         ):
@@ -97,7 +92,6 @@ def show_receipt_dialog(order):
 
     st.markdown("---")
 
-    # Inventory မှ ပစ္စည်းများကို Select လုပ်၍ ထည့်ရန်
     if not st.session_state[print_mode_key]:
       st.markdown(
           "💡 **Inventory မှ ပစ္စည်းအသစ် ထည့်သွင်းရန် (Suggestion / Select)**"
@@ -131,7 +125,6 @@ def show_receipt_dialog(order):
                 "Discount": 0.0,
                 "Tax": 0.0,
             })
-
             save_sales_to_firebase()
             st.success("ပစ္စည်း ထည့်ပြီးပါပြီ!")
             st.rerun()
@@ -140,7 +133,6 @@ def show_receipt_dialog(order):
 
     st.markdown("---")
 
-    # DataFrame ပြင်ဆင်ခြင်း
     if not order.get("items"):
       order["items"] = []
 
@@ -178,7 +170,6 @@ def show_receipt_dialog(order):
           key=f"editor_{order['order_id']}",
       )
 
-      # Inventory mapping dictionaries ဖန်တီးရန် (Two-way lookup)
       code_to_desc = {}
       desc_to_code = {}
       if "inventory_items" in st.session_state:
@@ -235,7 +226,6 @@ def show_receipt_dialog(order):
       total_amount = 0.0
 
     st.markdown("---")
-
     input_col1, input_col2 = st.columns(2)
     with input_col1:
       currency_choice = st.selectbox(
@@ -270,45 +260,10 @@ def show_receipt_dialog(order):
         f" {balance_due:,.0f} {curr_symbol}",
         unsafe_allow_html=True,
     )
-
     st.markdown("---")
     st.write("Thank you for choosing Honey Nails 'n' Beauty! / ကျေးဇူးတင်ရှိပါသည်။")
 
-    st.markdown("---")
-    st.write("📸 **Receipt Data သိမ်းဆည်းရန်**")
 
-    receipt_summary_text = (
-        f"--- HONEY NAILS 'n' BEAUTY ---\n"
-        f"OFFICIAL RECEIPT\n"
-        f"Receipt No: REC-{rec_id}\n"
-        f"Customer Name: {cust_name}\n"
-        f"Date & Time: {order['time']}\n"
-        f"----------------------------------------\n"
-    )
-    for itm in order.get("items", []):
-      receipt_summary_text += (
-          f"- {itm.get('Item Description')} (Code: {itm.get('Item Code')})"
-          f" x {itm.get('Qty')} : {itm.get('Price'):,.0f} {curr_symbol}\n"
-      )
-    receipt_summary_text += f"----------------------------------------\n"
-    receipt_summary_text += f"Total Amount: {total_amount:,.0f} {curr_symbol}\n"
-    receipt_summary_text += f"Paid Amount: {paid_amount:,.0f} {curr_symbol}\n"
-    receipt_summary_text += f"Balance Due: {balance_due:,.0f} {curr_symbol}\n"
-    receipt_summary_text += (
-        f"----------------------------------------\n"
-        f"Thank you for choosing Honey Nails 'n' Beauty!"
-    )
-
-    st.download_button(
-        label="📥 Download Receipt Data (.txt)",
-        data=receipt_summary_text,
-        file_name=f"Receipt_{rec_id}_{cust_name}.txt",
-        mime="text/plain",
-        key=f"download_txt_{order['order_id']}",
-    )
-
-
-# New Order Dialog
 @st.dialog("➕ New Sales Order ဖန်တီးရန်")
 def new_order_dialog():
   next_order_num = len(st.session_state.sales_orders) + 1
@@ -321,27 +276,21 @@ def new_order_dialog():
 
   if st.button("Order အသစ် သိမ်းဆည်းမည်"):
     if customer:
-      default_items = []
-      default_total = 0.0
-
       new_order = {
           "order_id": auto_order_id,
           "customer": customer,
           "time": current_time,
-          "items": default_items,
-          "paid_amount": default_total,
+          "items": [],
+          "paid_amount": 0.0,
       }
-
       st.session_state.sales_orders.append(new_order)
       save_sales_to_firebase()
-
       st.success("Order အသစ် အောင်မြင်စွာ ထည့်ပြီးပါပြီ!")
       st.rerun()
     else:
       st.warning("ကျေးဇူးပြု၍ Customer Name ထည့်ပါ။")
 
 
-# Delete Order Dialog
 @st.dialog("🗑️ Sales Order ဖျက်ရန်")
 def delete_order_dialog():
   if not st.session_state.sales_orders:
@@ -357,17 +306,14 @@ def delete_order_dialog():
         for ord in st.session_state.sales_orders
         if ord["order_id"] != selected_id
     ]
-
     try:
       db.collection("sales_orders").document(str(selected_id)).delete()
     except Exception as e:
       st.error(f"ဖျက်ရာတွင် အမှားအယွင်းရှိပါသည်: {e}")
-
     st.success(f"Order ID: {selected_id} ကို ဖျက်ပြီးပါပြီ!")
     st.rerun()
 
 
-# --- Main Web App Interface ---
 st.title("📊 Sales Orders Management")
 st.write(
     f"လက်ရှိဝင်ရောက်ထားသူ: **{st.session_state.username}** ("
@@ -384,66 +330,60 @@ with top_col3:
 
 st.markdown("---")
 
-# ==========================================
-# 📦 CONTAINER 1: Orders List (အပေါ်ပိုင်း)
-# ==========================================
 with st.container(border=True):
   st.subheader("📋 Orders List (အရောင်းစာရင်းများ)")
-
-  header_cols = st.columns([1.5, 2, 2, 2, 1.5])
-  header_cols[0].markdown("**Order ID**")
-  header_cols[1].markdown("**Customer Name**")
-  header_cols[2].markdown("**Payment Status**")
-  header_cols[3].markdown("**Time**")
-  header_cols[4].markdown("**Actions**")
-  st.markdown("---")
+  st.info("💡 ဇယားမှ Order တစ်ခုခုကို ကလစ်နှိပ်ရွေးချယ်လိုက်ပါက Receipt Form ပွင့်လာပါမည်။")
 
   if "sales_orders" in st.session_state and st.session_state.sales_orders:
-    for index, ord_data in enumerate(st.session_state.sales_orders):
+    table_data = []
+    for ord_data in st.session_state.sales_orders:
       items_list = ord_data.get("items", [])
-      if items_list:
-        items_df = pd.DataFrame(items_list)
-        if "Qty" in items_df.columns and "Price" in items_df.columns:
-          tot = (
-              items_df["Qty"] * items_df["Price"]
-              - items_df.get("Discount", 0)
-              + items_df.get("Tax", 0)
-          ).sum()
-        else:
-          tot = 0.0
-      else:
-        tot = 0.0
+      tot = sum(
+          itm.get("Qty", 0) * itm.get("Price", 0)
+          - itm.get("Discount", 0)
+          + itm.get("Tax", 0)
+          for itm in items_list
+      ) if items_list else 0.0
 
       paid = ord_data.get("paid_amount", tot)
       bal = tot - paid
+      p_status = "Unpaid" if paid == 0 else ("Paid" if bal == 0 else "Deposit")
 
-      if paid == 0:
-        p_status = "Unpaid"
-      elif bal == 0:
-        p_status = "Paid"
-      else:
-        p_status = "Deposit"
+      table_data.append({
+          "Order ID": ord_data["order_id"],
+          "Customer Name": ord_data["customer"],
+          "Payment Status": p_status,
+          "Total Amount": f"{tot:,.0f} Ks",
+          "Time": ord_data["time"],
+      })
 
-      cols = st.columns([1.5, 2, 2, 2, 1.5])
-      cols[0].write(f"**{ord_data['order_id']}**")
-      cols[1].write(ord_data["customer"])
-      cols[2].write(p_status)
-      cols[3].write(ord_data["time"])
+    df_orders = pd.DataFrame(table_data)
+    
+    # st.dataframe with on_select to click & open receipt directly
+    selected_event = st.dataframe(
+        df_orders,
+        use_container_width=True,
+        hide_index=True,
+        selection_mode="single-row",
+        on_select="rerun",
+        key="sales_orders_table"
+    )
 
-      with cols[4]:
-        if st.button("🔍 View Receipt", key=f"btn_{ord_data['order_id']}_{index}"):
-          show_receipt_dialog(ord_data)
+    if selected_event and selected_event.selection.rows:
+      selected_row_idx = selected_event.selection.rows[0]
+      clicked_order_id = df_orders.iloc[selected_row_idx]["Order ID"]
+      target_order = next(
+          (o for o in st.session_state.sales_orders if o["order_id"] == clicked_order_id),
+          None
+      )
+      if target_order:
+        show_receipt_dialog(target_order)
   else:
     st.info("အရောင်းအော်ဒါများ မရှိသေးပါ။")
 
 st.markdown("---")
-
-# ==========================================
-# 🛒 CONTAINER 2: All Items Summary (အောက်ပိုင်း)
-# ==========================================
 with st.container(border=True):
   st.subheader("🛍️ Best Selling Items Summary (အရောင်းရဆုံး ပစ္စည်းများ အကျဉ်းချုပ်)")
-
   if "sales_orders" in st.session_state and st.session_state.sales_orders:
     all_sales_items = []
     for ord_data in st.session_state.sales_orders:
@@ -453,22 +393,16 @@ with st.container(border=True):
             "Item Description": itm.get("Item Description"),
             "Qty": int(itm.get("Qty", 0)),
             "Price": float(itm.get("Price", 0.0)),
-            "Amount": (
-                int(itm.get("Qty", 0)) * float(itm.get("Price", 0.0))
-            )
+            "Amount": (int(itm.get("Qty", 0)) * float(itm.get("Price", 0.0)))
             - float(itm.get("Discount", 0.0))
             + float(itm.get("Tax", 0.0)),
         })
-
     if all_sales_items:
       df_items = pd.DataFrame(all_sales_items)
-
       df_grouped = df_items.groupby(
           ["Item Code", "Item Description"], as_index=False
       ).agg({"Qty": "sum", "Price": "mean", "Amount": "sum"})
-
       df_grouped = df_grouped.sort_values(by="Qty", ascending=False)
-
       st.dataframe(df_grouped, use_container_width=True, hide_index=True)
     else:
       st.info("ပြေစာများထဲတွင် ပစ္စည်းအချက်အလက်များ မရှိသေးပါ။")
