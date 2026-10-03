@@ -129,14 +129,14 @@ else:
         " ကြည့်ရှုနိုင်သော်လည်း ဈေးနှုန်းနှင့် ပစ္စည်းအချက်အလက်များ"
         " ပြင်ဆင်ခွင့် မရှိပါ။"
     )
+    edited_inv = df_inv.copy()
     st.dataframe(df_inv, use_container_width=True, hide_index=True)
 
 # ဇယား (၂): Final Calculated Inventory (Status ဖြင့်တွက်ချက်ပြသခြင်း)
 st.markdown("---")
 st.subheader("📊 Final Calculated Inventory (Prices & Stock တိကျစွာ တွက်ချက်ပြီး)")
 
-# Fixed NameError for Staff Role by checking role or using edited_inv safely
-calc_df = edited_inv.copy() if (user_role == "Admin" and 'edited_inv' in locals()) else df_inv.copy()
+calc_df = edited_inv.copy()
 
 
 def get_status(qty):

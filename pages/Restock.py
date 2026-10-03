@@ -16,6 +16,7 @@ if not st.session_state.get("logged_in", False):
 
 st.sidebar.write(f"👤 User: {st.session_state.username}")
 
+# 1. Load Restock Orders from Firebase
 if "restock_orders" not in st.session_state:
     try:
         docs = db.collection("restock_orders").stream()
@@ -45,39 +46,60 @@ def save_restock_to_firebase():
         st.error(f"❌ Restock Orders သိမ်းဆည်းရာတွင် အမှားရှိပါသည်: {e}")
 
 
-def update_inventory_stock_on_restock(items):
+def recalculate_and_sync_inventory():
+    """Restock orders အားလုံးထဲမှ Qty များနှင့် Deli Fee များကို Item Code အလိုက် စုစုပေါင်း (Sum) တွက်ချက်ပြီး Inventory ကို တိကျစွာ အပ်ဒိတ်လုပ်သည်။ (Duplicate မဖြစ်စေရန်)"""
     try:
-        for item in items:
-            code = str(item.get("Item Code"))
-            qty_to_add = int(item.get("Qty", 0))
-            desc = item.get("Item Description", "New Item")
-            deli_fee_val = float(item.get("Deli Fee", 0.0))
-
-            if code and code != "nan" and code != "HNB-000":
-                doc_ref = db.collection("inventory").document(code)
-                doc = doc_ref.get()
-
-                if doc.exists:
-                    data = doc.to_dict()
-                    current_qty = int(data.get("Current Qty", 0)) if data else 0
-                    doc_ref.update({
-                        "Item Description": desc,
-                        "Current Qty": current_qty + qty_to_add,
-                        "Cargo Deli Fee": deli_fee_val,
-                    })
-                else:
-                    doc_ref.set({
+        item_totals = {}
+        
+        # 1. Aggregate all quantities and deli fees from all restock orders
+        for order in st.session_state.restock_orders:
+            for item in order.get("items", []):
+                code = str(item.get("Item Code", "")).strip()
+                if not code or code == "nan" or code == "HNB-000":
+                    continue
+                
+                qty = int(item.get("Qty", 0)) if pd.notna(item.get("Qty", 0)) else 0
+                deli = float(item.get("Deli Fee", 0.0)) if pd.notna(item.get("Deli Fee", 0.0)) else 0.0
+                desc = item.get("Item Description", "New Item")
+                
+                if code not in item_totals:
+                    item_totals[code] = {
                         "Item Code": code,
                         "Item Description": desc,
-                        "Current Qty": qty_to_add,
-                        "Buying Price (¥)": 0.0,
-                        "Selling Price (Ks)": 0.0,
-                        "Selling Price (¥)": 0.0,
-                        "Cargo Deli Fee": deli_fee_val,
-                        "Time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    })
+                        "Current Qty": 0,
+                        "Cargo Deli Fee": 0.0,
+                    }
+                
+                item_totals[code]["Current Qty"] += qty
+                item_totals[code]["Cargo Deli Fee"] += deli
+                # Keep latest description if available
+                if desc and desc != "New Item":
+                    item_totals[code]["Item Description"] = desc
+
+        # 2. Update Firebase Inventory with aggregated totals
+        for code, data in item_totals.items():
+            doc_ref = db.collection("inventory").document(code)
+            doc = doc_ref.get()
+            
+            if doc.exists:
+                doc_ref.update({
+                    "Item Description": data["Item Description"],
+                    "Current Qty": data["Current Qty"],
+                    "Cargo Deli Fee": data["Cargo Deli Fee"],
+                })
+            else:
+                doc_ref.set({
+                    "Item Code": code,
+                    "Item Description": data["Item Description"],
+                    "Current Qty": data["Current Qty"],
+                    "Buying Price (¥)": 0.0,
+                    "Selling Price (Ks)": 0.0,
+                    "Selling Price (¥)": 0.0,
+                    "Cargo Deli Fee": data["Cargo Deli Fee"],
+                    "Time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                })
     except Exception as e:
-        st.error(f"❌ Stock နှင့် Deli Fee အပ်ဒိတ်ရာတွင် အမှားရှိပါသည်: {e}")
+        st.error(f"❌ Inventory ဆက်စပ်တွက်ချက်ရာတွင် အမှားရှိပါသည်: {e}")
 
 
 @st.dialog("📥 Restock Receipt / ပစ္စည်းဝယ်ယူမှုပြေစာ", width="large")
@@ -94,23 +116,13 @@ def show_restock_dialog(order):
                     st.session_state[print_mode_key] = False
                     st.rerun()
             else:
-                if st.button(
-                    "🖨️ Print View သို့ ပြောင်းမည်",
-                    key=f"r_pview_{order['order_id']}",
-                    type="primary",
-                ):
+                if st.button("🖨️ Print View သို့ ပြောင်းမည်", key=f"r_pview_{order['order_id']}", type="primary"):
                     st.session_state[print_mode_key] = True
                     st.rerun()
         st.markdown("---")
 
-        st.markdown(
-            "<h2 style='text-align: center; color: #1e3a8a;'>Honey Nails 'n' Beauty</h2>",
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            "<h4 style='text-align: center; color: #1d4ed8;'>RESTOCK RECEIPT / ပစ္စည်းဝယ်ယူမှုပြေစာ</h4>",
-            unsafe_allow_html=True,
-        )
+        st.markdown("<h2 style='text-align: center; color: #1e3a8a;'>Honey Nails 'n' Beauty</h2>", unsafe_allow_html=True)
+        st.markdown("<h4 style='text-align: center; color: #1d4ed8;'>RESTOCK RECEIPT / ပစ္စည်းဝယ်ယူမှုပြေစာ</h4>", unsafe_allow_html=True)
         st.markdown("---")
 
         col_info1, col_info2 = st.columns(2)
@@ -144,13 +156,9 @@ def show_restock_dialog(order):
         df_items = pd.DataFrame(formatted_items)
         if not df_items.empty:
             df_items["Total Cost"] = df_items["Total Price"] + df_items["Deli Fee"]
-            df_items = df_items[[
-                "Item Code", "Item Description", "Qty", "Total Price", "Deli Fee", "Total Cost", "Status", "Remark"
-            ]]
+            df_items = df_items[["Item Code", "Item Description", "Qty", "Total Price", "Deli Fee", "Total Cost", "Status", "Remark"]]
         else:
-            df_items = pd.DataFrame(columns=[
-                "Item Code", "Item Description", "Qty", "Total Price", "Deli Fee", "Total Cost", "Status", "Remark"
-            ])
+            df_items = pd.DataFrame(columns=["Item Code", "Item Description", "Qty", "Total Price", "Deli Fee", "Total Cost", "Status", "Remark"])
 
         editor_key = f"r_editor_{order['order_id']}"
 
@@ -187,7 +195,7 @@ def show_restock_dialog(order):
                             "Remark": new_remark,
                         })
                         save_restock_to_firebase()
-                        update_inventory_stock_on_restock(order["items"])
+                        recalculate_and_sync_inventory()
                         st.success("ပစ္စည်းအသစ် ထည့်ပြီးပါပြီ!")
                         st.rerun()
 
@@ -222,7 +230,7 @@ def show_restock_dialog(order):
 
             order["items"] = updated_items
             save_restock_to_firebase()
-            update_inventory_stock_on_restock(updated_items)
+            recalculate_and_sync_inventory()
 
         total_items_cost = edited_df["Total Price"].sum() if not edited_df.empty else 0
         total_deli_fee = edited_df["Deli Fee"].sum() if not edited_df.empty else 0
@@ -307,6 +315,7 @@ def delete_restock_dialog():
         st.session_state.restock_orders = [ord for ord in st.session_state.restock_orders if ord["order_id"] != selected_id]
         try:
             db.collection("restock_orders").document(str(selected_id)).delete()
+            recalculate_and_sync_inventory() # Recalculate inventory after deletion
         except Exception as e:
             st.error(f"ဖျက်ရာတွင် အမှားအယွင်းရှိပါသည်: {e}")
         st.success(f"Restock ID: {selected_id} ကို ဖျက်ပြီးပါပြီ!")
@@ -324,9 +333,6 @@ with top_col3:
     if st.button("➕ New Order"):
         new_restock_dialog()
 
-st.markdown("---")
-
-# ဇယား (၁): Base Restock Items & Pricing Editor
 st.markdown("---")
 st.subheader("📋 Base Restock Items & Pricing Editor")
 st.write("အောက်ပါ ဇယားတွင် Restock ပစ္စည်းအချက်အလက်များကို တည်းဖြတ်ပြီး အပြောင်းအလဲများကို သိမ်းဆည်းပါ။")
@@ -381,9 +387,9 @@ if st.session_state.restock_orders:
                                 "Remark": str(row["Remark"]) if pd.notna(row["Remark"]) else "",
                             })
                         r_ord["items"] = updated_ord_items
-                        save_restock_to_firebase()
-                        update_inventory_stock_on_restock(r_ord["items"])
-                st.success("အပြောင်းအလဲများကို သိမ်းဆည်းပြီး Inventory ကိုပါ အောင်မြင်စွာ အပ်ဒိတ်လုပ်ပြီးပါပြီ!")
+                save_restock_to_firebase()
+                recalculate_and_sync_inventory()
+                st.success("အပြောင်းအလဲများကို သိမ်းဆည်းပြီး Inventory ကိုပါ တိကျစွာ အပ်ဒိတ်လုပ်ပြီးပါပြီ!")
                 st.rerun()
 
 st.markdown("---")
@@ -443,3 +449,4 @@ if filtered_orders:
                     show_restock_dialog(target_order)
 else:
     st.info("ရှာဖွေတွေ့ရှိသော Restock Order များ မရှိပါ။")
+    
