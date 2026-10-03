@@ -53,39 +53,38 @@ def save_restock_to_firebase():
 
 # Helper Function: Restock Order ထည့်လိုက်/ပြင်လိုက်တိုင်း Inventory ထဲသို့ Stock, Description နှင့် Deli Fee ပါ တခါတည်း အပ်ဒိတ်လုပ်ရန်
 def update_inventory_stock_on_restock(items):
-  try:
-    for item in items:
-      code = str(item.get("Item Code"))
-      qty_to_add = int(item.get("Qty", 0))
-      desc = item.get("Item Description", "New Item")
-      deli_fee_val = float(item.get("Deli Fee", 0.0))
+    try:
+        for item in items:
+            code = str(item.get("Item Code"))
+            qty_to_add = int(item.get("Qty", 0))
+            desc = item.get("Item Description", "New Item")
+            deli_fee_val = float(item.get("Deli Fee", 0.0))
 
-      if code and code != "nan" and code != "HNB-000":
-        doc_ref = db.collection("inventory").document(code)
-        doc = doc_ref.get()
+            if code and code != "nan" and code != "HNB-000":
+                doc_ref = db.collection("inventory").document(code)
+                doc = doc_ref.get()
 
-        if doc.exists:
-          data = doc.to_dict()
-          current_qty = int(data.get("Current Qty", 0)) if data else 0
-          # ရှိပြီးသား Qty နှင့် Deli Fee ကို Inventory ထဲသို့ အပ်ဒိတ်လုပ်မည်
-          doc_ref.update({
-              "Item Description": desc,
-              "Current Qty": current_qty + qty_to_add,
-              "Cargo Deli Fee": deli_fee_val,
-          })
-        else:
-          doc_ref.set({
-              "Item Code": code,
-              "Item Description": desc,
-              "Current Qty": qty_to_add,
-              "Buying Price (¥)": 0.0,
-              "Selling Price (Ks)": 0.0,
-              "Selling Price (¥)": 0.0,
-              "Cargo Deli Fee": deli_fee_val,
-              "Time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-          })
-  except Exception as e:
-    st.error(f"❌ Stock နှင့် Deli Fee အပ်ဒိတ်ရာတွင် အမှားရှိပါသည်: {e}")
+                if doc.exists:
+                    data = doc.to_dict()
+                    current_qty = int(data.get("Current Qty", 0)) if data else 0
+                    doc_ref.update({
+                        "Item Description": desc,
+                        "Current Qty": current_qty + qty_to_add,
+                        "Cargo Deli Fee": deli_fee_val,
+                    })
+                else:
+                    doc_ref.set({
+                        "Item Code": code,
+                        "Item Description": desc,
+                        "Current Qty": qty_to_add,
+                        "Buying Price (¥)": 0.0,
+                        "Selling Price (Ks)": 0.0,
+                        "Selling Price (¥)": 0.0,
+                        "Cargo Deli Fee": deli_fee_val,
+                        "Time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    })
+    except Exception as e:
+        st.error(f"❌ Stock နှင့် Deli Fee အပ်ဒိတ်ရာတွင် အမှားရှိပါသည်: {e}")
 
 
 # 2. Restock Receipt Dialog
@@ -233,27 +232,31 @@ def show_restock_dialog(order):
 
                     submitted = st.form_submit_button("➕ ဤပစ္စည်းကို စာရင်းထဲသို့ ထည့်မည်")
                     if submitted:
-                        order["items"].append({
-                            "Item Code": new_code,
-                            "Item Description": new_desc
-                            if new_desc
-                            else "Description အလွတ်",
-                            "Qty": int(new_qty),
-                            "Total Price": float(new_tprice),
-                            "Deli Fee": float(new_dfee),
-                            "Remark": new_remark,
-                        })
-                        save_restock_to_firebase()
-                        update_inventory_stock_on_restock(order["items"])
-                        st.success("ပစ္စည်းအသစ် ထည့်ပြီးပါပြီ!")
-                        st.rerun(scope="fragment")
+                        if new_code:
+                            order["items"].append({
+                                "Item Code": new_code,
+                                "Item Description": new_desc
+                                if new_desc
+                                else "Description အလွတ်",
+                                "Qty": int(new_qty),
+                                "Total Price": float(new_tprice),
+                                "Deli Fee": float(new_dfee),
+                                "Remark": new_remark,
+                            })
+                            save_restock_to_firebase()
+                            update_inventory_stock_on_restock(order["items"])
+                            st.success("ပစ္စည်းအသစ် ထည့်ပြီးပါပြီ!")
+                            st.rerun(scope="fragment")
 
                 st.markdown("---")
                 st.markdown("##### 📋 လက်ရှိဝယ်ယူထားသော ပစ္စည်းများစာရင်း")
+                
+                # num_rows="dynamic" ဖြင့် st.data_editor တွင် row များကို Delete / Add လုပ်နိုင်စေခြင်း
                 edited_df = st.data_editor(
                     df_items,
                     use_container_width=True,
                     hide_index=True,
+                    num_rows="dynamic",
                     key=editor_key,
                 )
 
