@@ -51,41 +51,41 @@ def save_restock_to_firebase():
         st.error(f"❌ Restock Orders သိမ်းဆည်းရာတွင် အမှားရှိပါသည်: {e}")
 
 
-# Helper Function: Restock Order ထည့်လိုက်/ပြင်လိုက်တိုင်း Inventory ထဲသို့ Stock နှင့် Description ပါ တခါတည်း အပ်ဒိတ်လုပ်ရန်
+# Helper Function: Restock Order ထည့်လိုက်/ပြင်လိုက်တိုင်း Inventory ထဲသို့ Stock, Description နှင့် Deli Fee ပါ တခါတည်း အပ်ဒိတ်လုပ်ရန်
 def update_inventory_stock_on_restock(items):
-    try:
-        for item in items:
-            code = str(item.get("Item Code"))
-            qty_to_add = int(item.get("Qty", 0))
-            desc = item.get("Item Description", "New Item")
+  try:
+    for item in items:
+      code = str(item.get("Item Code"))
+      qty_to_add = int(item.get("Qty", 0))
+      desc = item.get("Item Description", "New Item")
+      deli_fee_val = float(item.get("Deli Fee", 0.0))
 
-            if code and code != "nan" and code != "HNB-000":
-                doc_ref = db.collection("inventory").document(code)
-                doc = doc_ref.get()
+      if code and code != "nan" and code != "HNB-000":
+        doc_ref = db.collection("inventory").document(code)
+        doc = doc_ref.get()
 
-                if doc.exists:
-                    data = doc.to_dict()
-                    current_qty = int(data.get("Current Qty", 0)) if data else 0
-                    # ရှိပြီးသား Stock ပမာဏနှင့် အသစ်ဝယ်သည့် Qty ကို ပေါင်းထည့်မည် (သို့မဟုတ် လိုအပ်သလို ချိန်ညှိနိုင်သည်)
-                    # မှတ်ချက်: တစ်ခါတလေ data editor ကနေ တစ်ခါတည်း save ရင် Qty ထပ်မပေါင်းမိစေရန် ခွဲခြားနိုင်သော်လည်း ယခုတွင်မူ အဆင်ပြေစေရန် စီစဉ်ထားပါသည်
-                    new_total_qty = current_qty + qty_to_add
-                    doc_ref.update({
-                        "Item Description": desc,
-                        "Current Qty": new_total_qty,
-                        "Cargo Deli Fee": float(item.get("Deli Fee", 0.0)),
-                    })
-                else:
-                    doc_ref.set({
-                        "Item Code": code,
-                        "Item Description": desc,
-                        "Current Qty": qty_to_add,
-                        "Buying Price (¥)": 0.0,
-                        "Selling Price (Ks)": 0.0,
-                        "Selling Price (¥)": 0.0,
-                        "Cargo Deli Fee": float(item.get("Deli Fee", 0.0)),
-                    })
-    except Exception as e:
-        st.error(f"❌ Stock အလိုအလျောက် တွက်ချက်ရာတွင် အမှားရှိပါသည်: {e}")
+        if doc.exists:
+          data = doc.to_dict()
+          current_qty = int(data.get("Current Qty", 0)) if data else 0
+          # ရှိပြီးသား Qty နှင့် Deli Fee ကို Inventory ထဲသို့ အပ်ဒိတ်လုပ်မည်
+          doc_ref.update({
+              "Item Description": desc,
+              "Current Qty": current_qty + qty_to_add,
+              "Cargo Deli Fee": deli_fee_val,
+          })
+        else:
+          doc_ref.set({
+              "Item Code": code,
+              "Item Description": desc,
+              "Current Qty": qty_to_add,
+              "Buying Price (¥)": 0.0,
+              "Selling Price (Ks)": 0.0,
+              "Selling Price (¥)": 0.0,
+              "Cargo Deli Fee": deli_fee_val,
+              "Time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+          })
+  except Exception as e:
+    st.error(f"❌ Stock နှင့် Deli Fee အပ်ဒိတ်ရာတွင် အမှားရှိပါသည်: {e}")
 
 
 # 2. Restock Receipt Dialog
