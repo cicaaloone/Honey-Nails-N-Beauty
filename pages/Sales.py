@@ -57,12 +57,12 @@ def show_receipt_dialog(order):
     col_t1, col_t2 = st.columns([1.5, 4])
     with col_t1:
       if st.session_state[print_mode_key]:
-        if st.button("✏️ Edit Mode သို့ ပြန်ရန်", key=f"btn_edit_{order['order_id']}`"):
+        if st.button("✏️ Edit Mode သို့ ပြန်ရန်", key=f"btn_edit_{order['order_id']}"):
           st.session_state[print_mode_key] = False
           st.rerun()
       else:
         if st.button(
-            "🖨️️ Print View သို့ ပြောင်းမည်",
+            "🖨️ Print View သို့ ပြောင်းမည်",
             key=f"btn_pview_{order['order_id']}",
             type="primary",
         ):
@@ -330,60 +330,66 @@ with top_col3:
 
 st.markdown("---")
 
+# ==========================================
+# 📦 CONTAINER 1: Orders List (အပေါ်ပိုင်း - Original View Receipt Button Restored)
+# ==========================================
 with st.container(border=True):
   st.subheader("📋 Orders List (အရောင်းစာရင်းများ)")
-  st.info("💡 ဇယားမှ Order တစ်ခုခုကို ကလစ်နှိပ်ရွေးချယ်လိုက်ပါက Receipt Form ပွင့်လာပါမည်။")
+
+  header_cols = st.columns([1.5, 2, 2, 2, 1.5])
+  header_cols[0].markdown("**Order ID**")
+  header_cols[1].markdown("**Customer Name**")
+  header_cols[2].markdown("**Payment Status**")
+  header_cols[3].markdown("**Time**")
+  header_cols[4].markdown("**Actions**")
+  st.markdown("---")
 
   if "sales_orders" in st.session_state and st.session_state.sales_orders:
-    table_data = []
-    for ord_data in st.session_state.sales_orders:
+    for index, ord_data in enumerate(st.session_state.sales_orders):
       items_list = ord_data.get("items", [])
-      tot = sum(
-          itm.get("Qty", 0) * itm.get("Price", 0)
-          - itm.get("Discount", 0)
-          + itm.get("Tax", 0)
-          for itm in items_list
-      ) if items_list else 0.0
+      if items_list:
+        items_df = pd.DataFrame(items_list)
+        if "Qty" in items_df.columns and "Price" in items_df.columns:
+          tot = (
+              items_df["Qty"] * items_df["Price"]
+              - items_df.get("Discount", 0)
+              + items_df.get("Tax", 0)
+          ).sum()
+        else:
+          tot = 0.0
+      else:
+        tot = 0.0
 
       paid = ord_data.get("paid_amount", tot)
       bal = tot - paid
-      p_status = "Unpaid" if paid == 0 else ("Paid" if bal == 0 else "Deposit")
 
-      table_data.append({
-          "Order ID": ord_data["order_id"],
-          "Customer Name": ord_data["customer"],
-          "Payment Status": p_status,
-          "Total Amount": f"{tot:,.0f} Ks",
-          "Time": ord_data["time"],
-      })
+      if paid == 0:
+        p_status = "Unpaid"
+      elif bal == 0:
+        p_status = "Paid"
+      else:
+        p_status = "Deposit"
 
-    df_orders = pd.DataFrame(table_data)
-    
-    # st.dataframe with on_select to click & open receipt directly
-    selected_event = st.dataframe(
-        df_orders,
-        use_container_width=True,
-        hide_index=True,
-        selection_mode="single-row",
-        on_select="rerun",
-        key="sales_orders_table"
-    )
+      cols = st.columns([1.5, 2, 2, 2, 1.5])
+      cols[0].write(f"**{ord_data['order_id']}**")
+      cols[1].write(ord_data["customer"])
+      cols[2].write(p_status)
+      cols[3].write(ord_data["time"])
 
-    if selected_event and selected_event.selection.rows:
-      selected_row_idx = selected_event.selection.rows[0]
-      clicked_order_id = df_orders.iloc[selected_row_idx]["Order ID"]
-      target_order = next(
-          (o for o in st.session_state.sales_orders if o["order_id"] == clicked_order_id),
-          None
-      )
-      if target_order:
-        show_receipt_dialog(target_order)
+      with cols[4]:
+        if st.button("🔍 View Receipt", key=f"btn_{ord_data['order_id']}_{index}"):
+          show_receipt_dialog(ord_data)
   else:
     st.info("အရောင်းအော်ဒါများ မရှိသေးပါ။")
 
 st.markdown("---")
+
+# ==========================================
+# 🛒 CONTAINER 2: All Items Summary (အောက်ပိုင်း)
+# ==========================================
 with st.container(border=True):
   st.subheader("🛍️ Best Selling Items Summary (အရောင်းရဆုံး ပစ္စည်းများ အကျဉ်းချုပ်)")
+
   if "sales_orders" in st.session_state and st.session_state.sales_orders:
     all_sales_items = []
     for ord_data in st.session_state.sales_orders:
@@ -393,16 +399,22 @@ with st.container(border=True):
             "Item Description": itm.get("Item Description"),
             "Qty": int(itm.get("Qty", 0)),
             "Price": float(itm.get("Price", 0.0)),
-            "Amount": (int(itm.get("Qty", 0)) * float(itm.get("Price", 0.0)))
+            "Amount": (
+                int(itm.get("Qty", 0)) * float(itm.get("Price", 0.0))
+            )
             - float(itm.get("Discount", 0.0))
             + float(itm.get("Tax", 0.0)),
         })
+
     if all_sales_items:
       df_items = pd.DataFrame(all_sales_items)
+
       df_grouped = df_items.groupby(
           ["Item Code", "Item Description"], as_index=False
       ).agg({"Qty": "sum", "Price": "mean", "Amount": "sum"})
+
       df_grouped = df_grouped.sort_values(by="Qty", ascending=False)
+
       st.dataframe(df_grouped, use_container_width=True, hide_index=True)
     else:
       st.info("ပြေစာများထဲတွင် ပစ္စည်းအချက်အလက်များ မရှိသေးပါ။")

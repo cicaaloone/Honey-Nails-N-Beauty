@@ -16,8 +16,6 @@ if not st.session_state.get("logged_in", False):
 
 st.sidebar.write(f"👤 User: {st.session_state.username}")
 
-
-# 1. Firebase မှ Restock Orders များကို ဖတ်ယူခြင်း
 if "restock_orders" not in st.session_state:
     try:
         docs = db.collection("restock_orders").stream()
@@ -31,7 +29,6 @@ if "restock_orders" not in st.session_state:
     except Exception as e:
         st.session_state.restock_orders = []
 
-# Inventory items များကို Firebase မှ ခေါ်ယူရန်
 if "inventory_items" not in st.session_state:
     try:
         docs = db.collection("inventory").stream()
@@ -40,18 +37,14 @@ if "inventory_items" not in st.session_state:
         st.session_state.inventory_items = []
 
 
-# Helper Function: Firebase သို့ Restock Orders များ သိမ်းဆည်းရန်
 def save_restock_to_firebase():
     try:
         for order in st.session_state.restock_orders:
-            db.collection("restock_orders").document(str(order["order_id"])).set(
-                order
-            )
+            db.collection("restock_orders").document(str(order["order_id"])).set(order)
     except Exception as e:
         st.error(f"❌ Restock Orders သိမ်းဆည်းရာတွင် အမှားရှိပါသည်: {e}")
 
 
-# Helper Function: Restock Order ထည့်လိုက်/ပြင်လိုက်တိုင်း Inventory ထဲသို့ Stock, Description နှင့် Deli Fee ပါ တခါတည်း အပ်ဒိတ်လုပ်ရန်
 def update_inventory_stock_on_restock(items):
     try:
         for item in items:
@@ -87,255 +80,186 @@ def update_inventory_stock_on_restock(items):
         st.error(f"❌ Stock နှင့် Deli Fee အပ်ဒိတ်ရာတွင် အမှားရှိပါသည်: {e}")
 
 
-# 2. Restock Receipt Dialog
 @st.dialog("📥 Restock Receipt / ပစ္စည်းဝယ်ယူမှုပြေစာ", width="large")
 def show_restock_dialog(order):
+    print_mode_key = f"r_print_mode_{order['order_id']}"
+    if print_mode_key not in st.session_state:
+        st.session_state[print_mode_key] = False
 
-    @st.fragment
-    def restock_fragment():
+    with st.container(border=True):
+        col_t1, col_t2 = st.columns([1.5, 4])
+        with col_t1:
+            if st.session_state[print_mode_key]:
+                if st.button("✏️ Edit Mode သို့ ပြန်ရန်", key=f"r_edit_{order['order_id']}"):
+                    st.session_state[print_mode_key] = False
+                    st.rerun()
+            else:
+                if st.button(
+                    "🖨️ Print View သို့ ပြောင်းမည်",
+                    key=f"r_pview_{order['order_id']}",
+                    type="primary",
+                ):
+                    st.session_state[print_mode_key] = True
+                    st.rerun()
+        st.markdown("---")
+
         st.markdown(
-            """
-            <style>
-            @media print {
-                .no-print, button, div[data-testid="stInfo"], div.stButton { display: none !important; }
-                div[data-testid="stVerticalBlock"] > div[data-testid="stContainer"] { border: none !important; box-shadow: none !important; padding: 0px !important; }
-                body { font-size: 12px; }
-                hr { margin: 5px 0px !important; }
-            }
-            </style>
-            """,
+            "<h2 style='text-align: center; color: #1e3a8a;'>Honey Nails 'n' Beauty</h2>",
             unsafe_allow_html=True,
         )
+        st.markdown(
+            "<h4 style='text-align: center; color: #1d4ed8;'>RESTOCK RECEIPT / ပစ္စည်းဝယ်ယူမှုပြေစာ</h4>",
+            unsafe_allow_html=True,
+        )
+        st.markdown("---")
 
-        print_mode_key = f"r_print_mode_{order['order_id']}"
-        if print_mode_key not in st.session_state:
-            st.session_state[print_mode_key] = False
+        col_info1, col_info2 = st.columns(2)
+        with col_info1:
+            st.write(f"**Supplier:** {order.get('supplier', '')}")
+            st.write(f"**Date & Time:** {order.get('time', '')}")
+        with col_info2:
+            st.write(f"**Restock ID:** {order.get('order_id', '')}")
 
-        with st.container(border=True):
-            st.markdown('<div class="no-print">', unsafe_allow_html=True)
-            col_t1, col_t2 = st.columns([1.5, 4])
-            with col_t1:
-                if st.session_state[print_mode_key]:
-                    if st.button(
-                        "✏️ Edit Mode သို့ ပြန်ရန်", key=f"r_edit_{order['order_id']}"
-                    ):
-                        st.session_state[print_mode_key] = False
-                        st.rerun(scope="fragment")
-                else:
-                    if st.button(
-                        "🖨️ Print View သို့ ပြောင်းမည်",
-                        key=f"r_pview_{order['order_id']}",
-                        type="primary",
-                    ):
-                        st.session_state[print_mode_key] = True
-                        st.rerun(scope="fragment")
-            st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown("---")
+
+        raw_items = order.get("items", [])
+        formatted_items = []
+        for itm in raw_items:
+            t_price = float(itm.get("Total Price", 0)) if pd.notna(itm.get("Total Price", 0)) else 0.0
+            d_fee = float(itm.get("Deli Fee", 0)) if pd.notna(itm.get("Deli Fee", 0)) else 0.0
+            q_val = int(itm.get("Qty", 0)) if pd.notna(itm.get("Qty", 0)) else 0
+            status_val = "ရောက်ပြီ" if d_fee > 0 else "မရောက်သေး"
+            remark_val = itm.get("Remark", "")
+
+            formatted_items.append({
+                "Item Code": itm.get("Item Code", "HNB-000"),
+                "Item Description": itm.get("Item Description", "New Item"),
+                "Qty": q_val,
+                "Total Price": t_price,
+                "Deli Fee": d_fee,
+                "Status": status_val,
+                "Remark": remark_val,
+            })
+
+        df_items = pd.DataFrame(formatted_items)
+        if not df_items.empty:
+            df_items["Total Cost"] = df_items["Total Price"] + df_items["Deli Fee"]
+            df_items = df_items[[
+                "Item Code", "Item Description", "Qty", "Total Price", "Deli Fee", "Total Cost", "Status", "Remark"
+            ]]
+        else:
+            df_items = pd.DataFrame(columns=[
+                "Item Code", "Item Description", "Qty", "Total Price", "Deli Fee", "Total Cost", "Status", "Remark"
+            ])
+
+        editor_key = f"r_editor_{order['order_id']}"
+
+        if st.session_state[print_mode_key]:
+            st.info("💡 **Print View** သို့ ရောက်ရှိနေပါပြီ။")
+            st.dataframe(df_items, use_container_width=True, hide_index=True)
+            edited_df = df_items
+        else:
+            with st.form(key=f"add_item_form_{order['order_id']}"):
+                st.markdown("##### ➕ ပစ္စည်းအသစ် ထည့်ရန်")
+                f_col1, f_col2, f_col3, f_col4, f_col5, f_col6 = st.columns(6)
+                with f_col1:
+                    new_code = st.text_input("Item Code", value="HNB-")
+                with f_col2:
+                    new_desc = st.text_input("Item Description")
+                with f_col3:
+                    new_qty = st.number_input("Qty", min_value=1, value=1)
+                with f_col4:
+                    new_tprice = st.number_input("Total Price", min_value=0.0, value=0.0)
+                with f_col5:
+                    new_dfee = st.number_input("Deli Fee", min_value=0.0, value=0.0)
+                with f_col6:
+                    new_remark = st.text_input("Remark (မှတ်ချက်)")
+
+                submitted = st.form_submit_button("➕ ဤပစ္စည်းကို စာရင်းထဲသို့ ထည့်မည်")
+                if submitted:
+                    if new_code:
+                        order["items"].append({
+                            "Item Code": new_code,
+                            "Item Description": new_desc if new_desc else "Description အလွတ်",
+                            "Qty": int(new_qty),
+                            "Total Price": float(new_tprice),
+                            "Deli Fee": float(new_dfee),
+                            "Remark": new_remark,
+                        })
+                        save_restock_to_firebase()
+                        update_inventory_stock_on_restock(order["items"])
+                        st.success("ပစ္စည်းအသစ် ထည့်ပြီးပါပြီ!")
+                        st.rerun()
+
             st.markdown("---")
-
-            st.markdown(
-                "<h2 style='text-align: center; color: #1e3a8a;'>Honey Nails 'n'"
-                " Beauty</h2>",
-                unsafe_allow_html=True,
+            st.markdown("##### 📋 လက်ရှိဝယ်ယူထားသော ပစ္စည်းများစာရင်း")
+            
+            edited_df = st.data_editor(
+                df_items,
+                use_container_width=True,
+                hide_index=True,
+                num_rows="dynamic",
+                key=editor_key,
             )
-            st.markdown(
-                "<h4 style='text-align: center; color: #1d4ed8;'>RESTOCK RECEIPT /"
-                " ပစ္စည်းဝယ်ယူမှုပြေစာ</h4>",
-                unsafe_allow_html=True,
-            )
-            st.markdown("---")
 
-            col_info1, col_info2 = st.columns(2)
-            with col_info1:
-                st.write(f"**Supplier:** {order.get('supplier', '')}")
-                st.write(f"**Date & Time:** {order.get('time', '')}")
-            with col_info2:
-                st.write(f"**Restock ID:** {order.get('order_id', '')}")
+            updated_items = []
+            for _, row in edited_df.iterrows():
+                code = str(row["Item Code"]) if pd.notna(row["Item Code"]) and str(row["Item Code"]).strip() != "" else "HNB-000"
+                desc = str(row["Item Description"]) if pd.notna(row["Item Description"]) else "New Item"
+                qty = int(row["Qty"]) if pd.notna(row["Qty"]) else 0
+                tot_price = float(row["Total Price"]) if pd.notna(row["Total Price"]) else 0.0
+                deli_fee = float(row["Deli Fee"]) if pd.notna(row["Deli Fee"]) else 0.0
+                remark = str(row["Remark"]) if pd.notna(row["Remark"]) else ""
 
-            st.markdown("---")
-
-            raw_items = order.get("items", [])
-
-            formatted_items = []
-            for itm in raw_items:
-                t_price = (
-                    float(itm.get("Total Price", 0))
-                    if pd.notna(itm.get("Total Price", 0))
-                    else 0.0
-                )
-                d_fee = (
-                    float(itm.get("Deli Fee", 0))
-                    if pd.notna(itm.get("Deli Fee", 0))
-                    else 0.0
-                )
-                q_val = int(itm.get("Qty", 0)) if pd.notna(itm.get("Qty", 0)) else 0
-
-                status_val = "ရောက်ပြီ" if d_fee > 0 else "မရောက်သေး"
-                remark_val = itm.get("Remark", "")
-
-                formatted_items.append({
-                    "Item Code": itm.get("Item Code", "HNB-000"),
-                    "Item Description": itm.get("Item Description", "New Item"),
-                    "Qty": q_val,
-                    "Total Price": t_price,
-                    "Deli Fee": d_fee,
-                    "Status": status_val,
-                    "Remark": remark_val,
+                updated_items.append({
+                    "Item Code": code,
+                    "Item Description": desc,
+                    "Qty": qty,
+                    "Total Price": tot_price,
+                    "Deli Fee": deli_fee,
+                    "Remark": remark,
                 })
 
-            df_items = pd.DataFrame(formatted_items)
-            if not df_items.empty:
-                df_items["Total Cost"] = df_items["Total Price"] + df_items["Deli Fee"]
-                df_items = df_items[[
-                    "Item Code",
-                    "Item Description",
-                    "Qty",
-                    "Total Price",
-                    "Deli Fee",
-                    "Total Cost",
-                    "Status",
-                    "Remark",
-                ]]
-            else:
-                df_items = pd.DataFrame(columns=[
-                    "Item Code",
-                    "Item Description",
-                    "Qty",
-                    "Total Price",
-                    "Deli Fee",
-                    "Total Cost",
-                    "Status",
-                    "Remark",
-                ])
+            order["items"] = updated_items
+            save_restock_to_firebase()
+            update_inventory_stock_on_restock(updated_items)
 
-            editor_key = f"r_editor_{order['order_id']}"
+        total_items_cost = edited_df["Total Price"].sum() if not edited_df.empty else 0
+        total_deli_fee = edited_df["Deli Fee"].sum() if not edited_df.empty else 0
+        total_cost = total_items_cost + total_deli_fee
 
-            if st.session_state[print_mode_key]:
-                st.info("💡 **Print View** သို့ ရောက်ရှိနေပါပြီ။")
-                st.dataframe(df_items, use_container_width=True, hide_index=True)
-                edited_df = df_items
-            else:
-                with st.form(key=f"add_item_form_{order['order_id']}"):
-                    st.markdown("##### ➕ ပစ္စည်းအသစ် ထည့်ရန်")
-                    f_col1, f_col2, f_col3, f_col4, f_col5, f_col6 = st.columns(6)
-                    with f_col1:
-                        new_code = st.text_input("Item Code", value="HNB-")
-                    with f_col2:
-                        new_desc = st.text_input("Item Description")
-                    with f_col3:
-                        new_qty = st.number_input("Qty", min_value=1, value=1)
-                    with f_col4:
-                        new_tprice = st.number_input("Total Price", min_value=0.0, value=0.0)
-                    with f_col5:
-                        new_dfee = st.number_input("Deli Fee", min_value=0.0, value=0.0)
-                    with f_col6:
-                        new_remark = st.text_input("Remark (မှတ်ချက်)")
+        st.markdown("---")
+        st.markdown(f"**ပစ္စည်းတန်ဖိုး စုစုပေါင်း:** {total_items_cost:,.0f} ကျပ်")
+        st.markdown(f"**စုစုပေါင်း Deli Fee:** {total_deli_fee:,.0f} ကျပ်")
+        st.markdown(f"**စုစုပေါင်း ကျသင့်ငွေ (Deli Fee အပါအဝင်):** {total_cost:,.0f} ကျပ်")
 
-                    submitted = st.form_submit_button("➕ ဤပစ္စည်းကို စာရင်းထဲသို့ ထည့်မည်")
-                    if submitted:
-                        if new_code:
-                            order["items"].append({
-                                "Item Code": new_code,
-                                "Item Description": new_desc
-                                if new_desc
-                                else "Description အလွတ်",
-                                "Qty": int(new_qty),
-                                "Total Price": float(new_tprice),
-                                "Deli Fee": float(new_dfee),
-                                "Remark": new_remark,
-                            })
-                            save_restock_to_firebase()
-                            update_inventory_stock_on_restock(order["items"])
-                            st.success("ပစ္စည်းအသစ် ထည့်ပြီးပါပြီ!")
-                            st.rerun(scope="fragment")
-
-                st.markdown("---")
-                st.markdown("##### 📋 လက်ရှိဝယ်ယူထားသော ပစ္စည်းများစာရင်း")
-                
-                # num_rows="dynamic" ဖြင့် st.data_editor တွင် row များကို Delete / Add လုပ်နိုင်စေခြင်း
-                edited_df = st.data_editor(
-                    df_items,
-                    use_container_width=True,
-                    hide_index=True,
-                    num_rows="dynamic",
-                    key=editor_key,
-                )
-
-                updated_items = []
-                for _, row in edited_df.iterrows():
-                    code = (
-                        str(row["Item Code"])
-                        if pd.notna(row["Item Code"]) and str(row["Item Code"]).strip() != ""
-                        else "HNB-000"
-                    )
-                    desc = (
-                        str(row["Item Description"])
-                        if pd.notna(row["Item Description"])
-                        else "New Item"
-                    )
-                    qty = int(row["Qty"]) if pd.notna(row["Qty"]) else 0
-                    tot_price = (
-                        float(row["Total Price"]) if pd.notna(row["Total Price"]) else 0.0
-                    )
-                    deli_fee = float(row["Deli Fee"]) if pd.notna(row["Deli Fee"]) else 0.0
-                    remark = str(row["Remark"]) if pd.notna(row["Remark"]) else ""
-
-                    updated_items.append({
-                        "Item Code": code,
-                        "Item Description": desc,
-                        "Qty": qty,
-                        "Total Price": tot_price,
-                        "Deli Fee": deli_fee,
-                        "Remark": remark,
-                    })
-
-                order["items"] = updated_items
-                save_restock_to_firebase()
-                update_inventory_stock_on_restock(updated_items)
-
-            total_items_cost = (
-                edited_df["Total Price"].sum() if not edited_df.empty else 0
+        st.markdown("---")
+        st.markdown("📥 **Export & Print Options**")
+        exp_col1, exp_col2, exp_col3 = st.columns(3)
+        with exp_col1:
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine="openpyxl") as writer:
+                edited_df.to_excel(writer, index=False, sheet_name="Restock")
+            st.download_button(
+                "📥 Download Excel",
+                data=output.getvalue(),
+                file_name=f"Restock_{order['order_id']}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.excel",
+                key=f"dl_r_excel_{order['order_id']}",
             )
-            total_deli_fee = edited_df["Deli Fee"].sum() if not edited_df.empty else 0
-            total_cost = total_items_cost + total_deli_fee
-
-            st.markdown("---")
-            st.markdown(f"**ပစ္စည်းတန်ဖိုး စုစုပေါင်း:** {total_items_cost:,.0f} ကျပ်")
-            st.markdown(f"**စုစုပေါင်း Deli Fee:** {total_deli_fee:,.0f} ကျပ်")
-            st.markdown(
-                f"**စုစုပေါင်း ကျသင့်ငွေ (Deli Fee အပါအဝင်):** {total_cost:,.0f} ကျပ်"
+        with exp_col2:
+            st.download_button(
+                "📄 Download CSV",
+                data=edited_df.to_csv(index=False).encode("utf-8"),
+                file_name=f"Restock_{order['order_id']}.csv",
+                mime="text/csv",
+                key=f"dl_r_csv_{order['order_id']}",
             )
-
-            st.markdown("---")
-            st.markdown("📥 **Export & Print Options**")
-            exp_col1, exp_col2, exp_col3 = st.columns(3)
-
-            with exp_col1:
-                output = io.BytesIO()
-                with pd.ExcelWriter(output, engine="openpyxl") as writer:
-                    edited_df.to_excel(writer, index=False, sheet_name="Restock")
-                st.download_button(
-                    "📥 Download Excel",
-                    data=output.getvalue(),
-                    file_name=f"Restock_{order['order_id']}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.excel",
-                    key=f"dl_r_excel_{order['order_id']}",
-                )
-            with exp_col2:
-                st.download_button(
-                    "📄 Download CSV",
-                    data=edited_df.to_csv(index=False).encode("utf-8"),
-                    file_name=f"Restock_{order['order_id']}.csv",
-                    mime="text/csv",
-                    key=f"dl_r_csv_{order['order_id']}",
-                )
-            with exp_col3:
-                if st.button("🖨️ Print", key=f"r_print_{order['order_id']}"):
-                    st.info("💡 Print View သို့ ပြောင်းပြီး Ctrl + P နှိပ်ပါ။")
-
-    restock_fragment()
+        with exp_col3:
+            if st.button("🖨️ Print", key=f"r_print_{order['order_id']}"):
+                st.info("💡 Print View သို့ ပြောင်းပြီး Ctrl + P နှိပ်ပါ။")
 
 
-# 3. New Restock Order Dialog
 @st.dialog("➕ New Restock Order ဖန်တီးရန်")
 def new_restock_dialog():
     next_num = len(st.session_state.restock_orders) + 1
@@ -345,18 +269,8 @@ def new_restock_dialog():
     st.write(f"**Restock ID (Auto):** {auto_id}")
     st.write(f"**Time:** {current_time}")
 
-    existing_suppliers = list(
-        set([
-            ord.get("supplier", "")
-            for ord in st.session_state.restock_orders
-            if ord.get("supplier")
-        ])
-    )
-
-    supplier_mode = st.radio(
-        "Supplier ရွေးချယ်မည့် ပုံစံ",
-        ["စာရင်းထဲမှ ရွေးမည် (Selectbox)", "အသစ် ရိုက်ထည့်မည် (Text Input)"],
-    )
+    existing_suppliers = list(set([ord.get("supplier", "") for ord in st.session_state.restock_orders if ord.get("supplier")]))
+    supplier_mode = st.radio("Supplier ရွေးချယ်မည့် ပုံစံ", ["စာရင်းထဲမှ ရွေးမည် (Selectbox)", "အသစ် ရိုက်ထည့်မည် (Text Input)"])
 
     if supplier_mode == "စာရင်းထဲမှ ရွေးမည် (Selectbox)" and existing_suppliers:
         supplier = st.selectbox("Supplier ရွေးချယ်ပါ", existing_suppliers)
@@ -365,24 +279,21 @@ def new_restock_dialog():
 
     if st.button("Restock Order အသစ် သိမ်းဆည်းမည်"):
         if supplier:
-            default_items = []
             new_restock = {
                 "order_id": auto_id,
                 "supplier": supplier,
                 "time": current_time,
-                "items": default_items,
+                "items": [],
                 "paid_amount": 0,
             }
             st.session_state.restock_orders.append(new_restock)
             save_restock_to_firebase()
-
             st.success("Restock Order အသစ် ထည့်ပြီးပါပြီ!")
             st.rerun()
         else:
             st.warning("ကျေးဇူးပြု၍ Supplier Name ထည့်ပါ။")
 
 
-# 4. Delete Restock Order Dialog
 @st.dialog("🗑️ Restock Order ဖျက်ရန်")
 def delete_restock_dialog():
     if not st.session_state.restock_orders:
@@ -393,27 +304,17 @@ def delete_restock_dialog():
     selected_id = st.selectbox("ဖျက်မည့် Restock ID ကို ရွေးပါ", order_ids)
 
     if st.button("သေချာပေါက် ဖျက်မည်", type="primary"):
-        st.session_state.restock_orders = [
-            ord
-            for ord in st.session_state.restock_orders
-            if ord["order_id"] != selected_id
-        ]
-
+        st.session_state.restock_orders = [ord for ord in st.session_state.restock_orders if ord["order_id"] != selected_id]
         try:
             db.collection("restock_orders").document(str(selected_id)).delete()
         except Exception as e:
             st.error(f"ဖျက်ရာတွင် အမှားအယွင်းရှိပါသည်: {e}")
-
         st.success(f"Restock ID: {selected_id} ကို ဖျက်ပြီးပါပြီ!")
         st.rerun()
 
 
-# --- Main Web App Interface ---
 st.title("📥 Restock Orders Management")
-st.write(
-    "ပစ္စည်းအသစ် ထပ်ဝယ်ယူမှုများကို စီမံခန့်ခွဲရန်နှင့် Stock အလိုအလျောက်"
-    " ပေါင်းထည့်ရန်"
-)
+st.write("ပစ္စည်းအသစ် ထပ်ဝယ်ယူမှုများကို စီမံခန့်ခွဲရန်နှင့် Stock အလိုအလျောက် ပေါင်းထည့်ရန်")
 
 top_col1, top_col2, top_col3 = st.columns([6, 1.2, 1.2])
 with top_col2:
@@ -428,29 +329,16 @@ st.markdown("---")
 # ဇယား (၁): Base Restock Items & Pricing Editor
 st.markdown("---")
 st.subheader("📋 Base Restock Items & Pricing Editor")
-st.write(
-    "အောက်ပါ ဇယားတွင် Restock ပစ္စည်းအချက်အလက်များကို တည်းဖြတ်ပြီး အပြောင်းအလဲများကို သိမ်းဆည်းပါ။"
-)
+st.write("အောက်ပါ ဇယားတွင် Restock ပစ္စည်းအချက်အလက်များကို တည်းဖြတ်ပြီး အပြောင်းအလဲများကို သိမ်းဆည်းပါ။")
 
 if st.session_state.restock_orders:
     all_restock_items = []
     for r_ord in st.session_state.restock_orders:
-        ord_items = r_ord.get("items", [])
-        for itm in ord_items:
-            t_price = (
-                float(itm.get("Total Price", 0))
-                if pd.notna(itm.get("Total Price", 0))
-                else 0.0
-            )
-            d_fee = (
-                float(itm.get("Deli Fee", 0.0))
-                if pd.notna(itm.get("Deli Fee", 0.0))
-                else 0.0
-            )
-            q_val = int(itm.get("Qty", 0)) if pd.notna(itm.get("Qty", 0)) else 0
+        for itm in r_ord.get("items", []):
+            t_price = float(itm.get("Total Price", 0)) if pd.notna(itm.get("Total Price", 0)) else 0.0
+            d_fee = float(itm.get("Deli Fee", 0.0)) if pd.notna(itm.get("Deli Fee", 0.0)) else 0.0
             tot_cost = t_price + d_fee
             status_val = "ရောက်ပြီ" if d_fee > 0 else "မရောက်သေး"
-            remark_val = itm.get("Remark", "")
 
             all_restock_items.append({
                 "Restock ID": r_ord.get("order_id"),
@@ -458,145 +346,72 @@ if st.session_state.restock_orders:
                 "Time": r_ord.get("time"),
                 "Item Code": itm.get("Item Code", "HNB-000"),
                 "Item Description": itm.get("Item Description", "New Item"),
-                "Qty": q_val,
+                "Qty": int(itm.get("Qty", 0)) if pd.notna(itm.get("Qty", 0)) else 0,
                 "Total Price": t_price,
                 "Deli Fee": d_fee,
                 "Total Cost": tot_cost,
                 "Status": status_val,
-                "Remark": remark_val,
+                "Remark": itm.get("Remark", ""),
             })
 
     df_base_restock = pd.DataFrame(all_restock_items)
-
     if not df_base_restock.empty:
         edited_base_restock = st.data_editor(
             df_base_restock,
             use_container_width=True,
             hide_index=True,
+            num_rows="dynamic",
             key="base_restock_editor",
         )
 
-        if st.button(
-            "💾 Save Changes (အပြောင်းအလဲများကို သိမ်းမည်)", type="primary"
-        ):
+        if st.button("💾 Save Changes (အပြောင်းအလဲများကို သိမ်းမည်)", type="primary"):
             if edited_base_restock is not None:
                 for r_ord in st.session_state.restock_orders:
                     o_id = r_ord["order_id"]
-                    matching_rows = edited_base_restock[
-                        edited_base_restock["Restock ID"] == o_id
-                    ]
+                    matching_rows = edited_base_restock[edited_base_restock["Restock ID"] == o_id]
                     if not matching_rows.empty:
                         updated_ord_items = []
                         for _, row in matching_rows.iterrows():
-                            code = (
-                                str(row["Item Code"])
-                                if pd.notna(row["Item Code"])
-                                and str(row["Item Code"]).strip() != ""
-                                else "HNB-000"
-                            )
-                            desc = (
-                                str(row["Item Description"])
-                                if pd.notna(row["Item Description"])
-                                else "New Item"
-                            )
-                            qty = int(row["Qty"]) if pd.notna(row["Qty"]) else 0
-                            tot_price = (
-                                float(row["Total Price"])
-                                if pd.notna(row["Total Price"])
-                                else 0.0
-                            )
-                            deli_fee = (
-                                float(row["Deli Fee"]) if pd.notna(row["Deli Fee"]) else 0.0
-                            )
-                            remark = str(row["Remark"]) if pd.notna(row["Remark"]) else ""
-
                             updated_ord_items.append({
-                                "Item Code": code,
-                                "Item Description": desc,
-                                "Qty": qty,
-                                "Total Price": tot_price,
-                                "Deli Fee": deli_fee,
-                                "Remark": remark,
+                                "Item Code": str(row["Item Code"]) if pd.notna(row["Item Code"]) and str(row["Item Code"]).strip() != "" else "HNB-000",
+                                "Item Description": str(row["Item Description"]) if pd.notna(row["Item Description"]) else "New Item",
+                                "Qty": int(row["Qty"]) if pd.notna(row["Qty"]) else 0,
+                                "Total Price": float(row["Total Price"]) if pd.notna(row["Total Price"]) else 0.0,
+                                "Deli Fee": float(row["Deli Fee"]) if pd.notna(row["Deli Fee"]) else 0.0,
+                                "Remark": str(row["Remark"]) if pd.notna(row["Remark"]) else "",
                             })
                         r_ord["items"] = updated_ord_items
                         save_restock_to_firebase()
                         update_inventory_stock_on_restock(r_ord["items"])
-
-                st.success(
-                    "အပြောင်းအလဲများကို သိမ်းဆည်းပြီး Inventory ၏ Description"
-                    " ကိုပါ အောင်မြင်စွာ အပ်ဒိတ်လုပ်ပြီးပါပြီ!"
-                )
+                st.success("အပြောင်းအလဲများကို သိမ်းဆည်းပြီး Inventory ကိုပါ အောင်မြင်စွာ အပ်ဒိတ်လုပ်ပြီးပါပြီ!")
                 st.rerun()
-    else:
-        st.info("ပြသရန် Restock ပစ္စည်း အချက်အလက်များ မရှိသေးပါ။")
-else:
-    st.info(
-        "💡 တည်းဖြတ်ရန် Restock စာရင်းများ မရှိသေးပါ။ အထက်ပါ **'+ New Order'**"
-        " ကိုနှိပ်၍ Order အသစ်အရင်ဖန်တီးပါ။"
-    )
 
-# Search / Filter လုပ်ရန် UI ပိုင်း
 st.markdown("---")
 st.markdown("### 🔍 Search & Filter Orders")
 filter_col1, filter_col2 = st.columns(2)
-
-all_suppliers = ["အားလုံး (All)"] + list(
-    set([
-        ord.get("supplier", "")
-        for ord in st.session_state.restock_orders
-        if ord.get("supplier")
-    ])
-)
+all_suppliers = ["အားလုံး (All)"] + list(set([ord.get("supplier", "") for ord in st.session_state.restock_orders if ord.get("supplier")]))
 
 with filter_col1:
-    selected_supplier_filter = st.selectbox(
-        "Supplier အလိုက် စစ်ထုတ်ရန်", all_suppliers
-    )
-
+    selected_supplier_filter = st.selectbox("Supplier အလိုက် စစ်ထုတ်ရန်", all_suppliers)
 with filter_col2:
     search_keyword = st.text_input("Restock ID (သို့) Supplier ဖြင့် ရှာဖွေရန်", "")
 
-st.markdown("---")
-
-# ဇယား (၂): Final Calculated / Summary Restock Orders List
 st.markdown("---")
 st.subheader("📊 Final Calculated Restock Orders List (Summary)")
 
 filtered_orders = st.session_state.restock_orders
 if selected_supplier_filter != "အားလုံး (All)":
-    filtered_orders = [
-        ord
-        for ord in filtered_orders
-        if ord.get("supplier") == selected_supplier_filter
-    ]
+    filtered_orders = [ord for ord in filtered_orders if ord.get("supplier") == selected_supplier_filter]
 
 if search_keyword.strip() != "":
     keyword = search_keyword.lower()
-    filtered_orders = [
-        ord
-        for ord in filtered_orders
-        if keyword in ord.get("order_id", "").lower()
-        or keyword in ord.get("supplier", "").lower()
-    ]
+    filtered_orders = [ord for ord in filtered_orders if keyword in ord.get("order_id", "").lower() or keyword in ord.get("supplier", "").lower()]
 
 if filtered_orders:
     summary_data = []
-    for index, ord_data in enumerate(filtered_orders):
+    for ord_data in filtered_orders:
         items_list = ord_data.get("items", [])
-        items_df = pd.DataFrame(items_list) if items_list else pd.DataFrame()
-        if not items_df.empty and "Total Price" in items_df.columns:
-            tp_col = "Total Price"
-            df_tp = pd.to_numeric(items_df[tp_col], errors="coerce").fillna(0)
-
-            deli_col = (
-                "Deli Fee" if "Deli Fee" in items_df.columns else items_df.columns[4]
-            )
-            df_deli = pd.to_numeric(items_df[deli_col], errors="coerce").fillna(0.0)
-
-            tot_cost = (df_tp + df_deli).sum()
-        else:
-            tot_cost = 0.0
-
+        tot_cost = sum(float(itm.get("Total Price", 0)) + float(itm.get("Deli Fee", 0)) for itm in items_list) if items_list else 0.0
         summary_data.append({
             "Restock ID": ord_data["order_id"],
             "Supplier Name": ord_data["supplier"],
@@ -605,21 +420,26 @@ if filtered_orders:
         })
 
     df_summary = pd.DataFrame(summary_data)
-    st.dataframe(df_summary, use_container_width=True, hide_index=True)
+    
+    header_cols = st.columns([1.5, 2.5, 2.5, 2, 1.5])
+    header_cols[0].markdown("**Restock ID**")
+    header_cols[1].markdown("**Supplier Name**")
+    header_cols[2].markdown("**Time**")
+    header_cols[3].markdown("**Total Items Cost**")
+    header_cols[4].markdown("**Actions**")
+    st.markdown("---")
 
-    st.write("---")
-    st.write("🔍 **View Receipt (အသေးစိတ်ကြည့်ရန်)**")
-    selected_view_id = st.selectbox(
-        "ပြေစာကြည့်မည့် Restock ID ကို ရွေးချယ်ပါ",
-        options=[ord["order_id"] for ord in filtered_orders],
-        key="restock_summary_select_id",
-    )
-    if st.button("📄 Selected Receipt ကို ဖွင့်မည်", key="restock_open_receipt_btn"):
-        target_order = next(
-            (ord for ord in filtered_orders if ord["order_id"] == selected_view_id),
-            None,
-        )
-        if target_order:
-            show_restock_dialog(target_order)
+    for index, row in df_summary.iterrows():
+        cols = st.columns([1.5, 2.5, 2.5, 2, 1.5])
+        cols[0].write(f"**{row['Restock ID']}**")
+        cols[1].write(row["Supplier Name"])
+        cols[2].write(row["Time"])
+        cols[3].write(row["Total Items Cost"])
+        
+        with cols[4]:
+            if st.button("🔍 View Receipt", key=f"r_btn_{row['Restock ID']}_{index}"):
+                target_order = next((ord for ord in filtered_orders if ord["order_id"] == row["Restock ID"]), None)
+                if target_order:
+                    show_restock_dialog(target_order)
 else:
     st.info("ရှာဖွေတွေ့ရှိသော Restock Order များ မရှိပါ။")

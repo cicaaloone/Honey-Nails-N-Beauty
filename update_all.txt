@@ -1,0 +1,44 @@
+import datetime
+import streamlit as st
+from firebase_config import db
+
+def update_all_files_and_database():
+    """
+    Honey Nails 'n' Beauty စနစ်တွင် ရှိသော Data များနှင့် Session State များကို 
+    Firebase နှင့် ချိတ်ဆက်၍ အလုံးစုံ အပ်ဒိတ်လုပ်ပေးသော လုပ်ဆောင်ချက်။
+    """
+    try:
+        st.write("🔄 ဖိုင်များနှင့် အချက်အလက်များ အပ်ဒိတ်လုပ်ခြင်း စတင်နေပါပြီ...")
+        
+        # 1. Restock Orders များကို အပ်ဒိတ်လုပ်ခြင်း
+        if "restock_orders" in st.session_state:
+            for order in st.session_state.restock_orders:
+                db.collection("restock_orders").document(str(order["order_id"])).set(order)
+            st.success("✅ Restock Orders အားလုံး အောင်မြင်စွာ အပ်ဒိတ်ဖြစ်သွားပါပြီ။")
+
+        # 2. Inventory Items များကို အပ်ဒိတ်လုပ်ခြင်း
+        if "inventory_items" in st.session_state:
+            for item in st.session_state.inventory_items:
+                code = str(item.get("Item Code"))
+                if code and code != "nan":
+                    db.collection("inventory").document(code).set(item)
+            st.success("✅ Inventory Database အားလုံး အောင်မြင်စွာ အပ်ဒိတ်ဖြစ်သွားပါပြီ။")
+
+        # 3. Sales / Invoices များကို အပ်ဒိတ်လုပ်ခြင်း
+        if "invoices" in st.session_state:
+            for inv in st.session_state.invoices:
+                inv_id = str(inv.get("invoice_id"))
+                if inv_id:
+                    db.collection("invoices").document(inv_id).set(inv)
+            st.success("✅ Invoices / Sales အားလုံး အောင်မြင်စွာ အပ်ဒိတ်ဖြစ်သွားပါပြီ။")
+
+        st.balloons()
+        st.success("🎉 အချက်အလက်နှင့် ဖိုင်အားလုံးကို အပ်ဒိတ်လုပ်ခြင်း ပြီးဆုံးပါပြီ!")
+
+    except Exception as e:
+        st.error(f"❌ အပ်ဒိတ်လုပ်ရာတွင် အမှားအယွင်း ရှိပါသည်: {e}")
+
+if __name__ == "__main__":
+    st.title("🔄 All Files & Data Update Command")
+    if st.button("🚀 Run Update All (ဖိုင်အားလုံး အပ်ဒိတ်လုပ်မည်)", type="primary"):
+        update_all_files_and_database()
