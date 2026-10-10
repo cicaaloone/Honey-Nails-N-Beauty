@@ -31,7 +31,6 @@ except Exception as e:
 
 current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-# အကယ်၍ Firebase ထဲမှာ ဒေတာမရှိတော့ရင် လုံးဝအလွတ် (Blank row with 0) သာ ပြရန်
 if not inventory_list:
     inventory_list = [
         {
@@ -48,7 +47,6 @@ if not inventory_list:
 
 df_inv = pd.DataFrame(inventory_list)
 
-# လိုအပ်သော Columns များ အစုံအလင် ပါဝင်စေရန် စစ်ဆေးခြင်း
 desired_columns = [
     "Item Code",
     "Item Description",
@@ -79,7 +77,6 @@ if user_role == "Admin":
         " ဈေးနှုန်းများကို တည်းဖြတ် သိမ်းဆည်းနိုင်ပါသည်။"
     )
 
-    # ဇယား (၁): Base Inventory & Pricing Editor
     st.subheader("📋 Base Inventory & Pricing Editor")
     edited_inv = st.data_editor(
         df_inv,
@@ -92,7 +89,6 @@ if user_role == "Admin":
     if st.button("💾 Inventory အပြောင်းအလဲများကို သိမ်းဆည်းမည်"):
         try:
             save_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            # Firestore ထဲသို့ တစ်ခုချင်းစီ ပြန်လည်သိမ်းဆည်းခြင်း
             for _, row in edited_inv.iterrows():
                 code = str(row["Item Code"])
                 if code and code != "nan" and code.strip() != "":
@@ -132,12 +128,83 @@ else:
     edited_inv = df_inv.copy()
     st.dataframe(df_inv, use_container_width=True, hide_index=True)
 
+# ---------------------------------------------------------
+# 🔍 Item History Dialog (Item Code အလိုက် အဝင်/အထွက် မှတ်တမ်းကြည့်ရန်)
+# ---------------------------------------------------------
+@st.dialog("📊 Item History / ပစ္စည်းအဝင်အထွက် မှတ်တမ်း", width="large")
+def show_item_history_dialog(selected_code):
+    st.markdown(f"### 🏷️ Item Code: **{selected_code}** ၏ အဝင်/အထွက် မှတ်တမ်းများ")
+    
+    # 1. Fetch Restock History (အဝင်)
+    restock_history = []
+    try:
+        r_docs = db.collection("restock_orders").stream()
+        for doc in r_docs:
+            r_data = doc.to_dict()
+            r_id = r_data.get("order_id")
+            r_time = r_data.get("time")
+            supplier = r_data.get("supplier")
+            for itm in r_data.get("items", []):
+                if str(itm.get("Item Code")).strip() == selected_code:
+                    restock_history.append({
+                        "Type": "📥 Restock (အဝင်)",
+                        "ID / Ref": r_id,
+                        "Name / Customer": f"Supplier: {supplier}",
+                        "Qty": int(itm.get("Qty", 0)),
+                        "Time": r_time
+                    })
+    except Exception as e:
+        pass
+
+    # 2. Fetch Sales History (အထွက်)
+    sales_history = []
+    try:
+        s_docs = db.collection("sales_orders").stream()
+        for doc in s_docs:
+            s_data = doc.to_dict()
+            s_id = s_data.get("order_id")
+            s_time = s_data.get("time")
+            customer = s_data.get("customer")
+            for itm in s_data.get("items", []):
+                if str(itm.get("Item Code")).strip() == selected_code:
+                    sales_history.append({
+                        "Type": "📤 Sale (အထွက်)",
+                        "ID / Ref": s_id,
+                        "Name / Customer": f"Customer: {customer}",
+                        "Qty": int(itm.get("Qty", 0)),
+                        "Time": s_time
+                    })
+    except Exception as e:
+        pass
+
+    all_history = restock_history + sales_history
+    if all_history:
+        df_history = pd.DataFrame(all_history)
+        # Sort by time descending
+        df_history = df_history.sort_values(by="Time", ascending=False)
+        st.dataframe(df_history, use_container_width=True, hide_index=True)
+    else:
+        st.info("ဤ Item Code အတွက် အဝင်/အထွက် မှတ်တမ်း မရှိသေးပါ။")
+
+
+st.markdown("---")
+st.subheader("🔍 Item History စစ်ဆေးရန် (ပစ္စည်းကုဒ် ရွေးချယ်ပါ)")
+
+# ရယူနိုင်သော Item Codes များကို Selectbox ထဲထည့်ရန်
+available_codes = [str(c) for c in edited_inv["Item Code"].tolist() if str(c).strip() and str(c) != "nan"]
+if available_codes:
+    selected_item_code = st.selectbox("မှတ်တမ်းကြည့်လိုသော Item Code ကို ရွေးပါ", available_codes)
+    if st.button("🔍 ဤပစ္စည်း၏ မှတ်တမ်းကို ကြည့်မည်"):
+        show_item_history_dialog(selected_item_code)
+else:
+    st.info("စစ်ဆေးရန် Item Code များ မရှိသေးပါ။")
+
+
 # ဇယား (၂): Final Calculated Inventory (Status ဖြင့်တွက်ချက်ပြသခြင်း)
 st.markdown("---")
 st.subheader("📊 Final Calculated Inventory (Prices & Stock တိကျစွာ တွက်ချက်ပြီး)")
 
 calc_df = edited_inv.copy()
-
 
 def get_status(qty):
     try:
@@ -150,7 +217,6 @@ def get_status(qty):
             return "🟢 In Stock"
     except:
         return "🟢 In Stock"
-
 
 calc_df["Status"] = calc_df["Current Qty"].apply(get_status)
 st.dataframe(calc_df, use_container_width=True, hide_index=True)
