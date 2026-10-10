@@ -133,9 +133,22 @@ else:
 # ---------------------------------------------------------
 @st.dialog("📊 Item History / ပစ္စည်းအဝင်အထွက် မှတ်တမ်း", width="large")
 def show_item_history_dialog(selected_code):
-    st.markdown(f"### 🏷️ Item Code: **{selected_code}** ၏ အဝင်/အထွက် မှတ်တမ်းများ")
+    # 1. Firebase မှ ဤ Item Code ၏ Description ကို ရှာဖွေခြင်း
+    item_desc_str = ""
+    try:
+        inv_doc = db.collection("inventory").document(selected_code).get()
+        if inv_doc.exists:
+            item_desc_str = inv_doc.to_dict().get("Item Description", "")
+    except Exception as e:
+        st.error(f"❌ Error occurred while fetching item description: {e}")
+
+    # Header မှာ Item Code နဲ့ Description ကို ပူးတွဲပြသရန်
+    if item_desc_str:
+        st.markdown(f"### 🏷️ Item: **{selected_code} - {item_desc_str}** ၏ အဝင်/အထွက် မှတ်တမ်းများ")
+    else:
+        st.markdown(f"### 🏷️ Item Code: **{selected_code}** ၏ အဝင်/အထွက် မှတ်တမ်းများ")
     
-    # 1. Fetch Restock History (အဝင်)
+    # 2. Fetch Restock History (အဝင်)
     restock_history = []
     try:
         r_docs = db.collection("restock_orders").stream()
@@ -146,9 +159,11 @@ def show_item_history_dialog(selected_code):
             supplier = r_data.get("supplier")
             for itm in r_data.get("items", []):
                 if str(itm.get("Item Code")).strip() == selected_code:
+                    desc_val = itm.get("Item Description", item_desc_str)
                     restock_history.append({
                         "Type": "📥 Restock (အဝင်)",
                         "ID / Ref": r_id,
+                        "Item Description": desc_val,
                         "Name / Customer": f"Supplier: {supplier}",
                         "Qty": int(itm.get("Qty", 0)),
                         "Time": r_time
@@ -156,7 +171,7 @@ def show_item_history_dialog(selected_code):
     except Exception as e:
         pass
 
-    # 2. Fetch Sales History (အထွက်)
+    # 3. Fetch Sales History (အထွက်)
     sales_history = []
     try:
         s_docs = db.collection("sales_orders").stream()
@@ -167,9 +182,11 @@ def show_item_history_dialog(selected_code):
             customer = s_data.get("customer")
             for itm in s_data.get("items", []):
                 if str(itm.get("Item Code")).strip() == selected_code:
+                    desc_val = itm.get("Item Description", item_desc_str)
                     sales_history.append({
                         "Type": "📤 Sale (အထွက်)",
                         "ID / Ref": s_id,
+                        "Item Description": desc_val,
                         "Name / Customer": f"Customer: {customer}",
                         "Qty": int(itm.get("Qty", 0)),
                         "Time": s_time
@@ -180,6 +197,8 @@ def show_item_history_dialog(selected_code):
     all_history = restock_history + sales_history
     if all_history:
         df_history = pd.DataFrame(all_history)
+        # Columns များကို စနစ်တကျ စီစဥ်ခြင်း
+        df_history = df_history[["Type", "ID / Ref", "Item Description", "Name / Customer", "Qty", "Time"]]
         # Sort by time descending
         df_history = df_history.sort_values(by="Time", ascending=False)
         st.dataframe(df_history, use_container_width=True, hide_index=True)
