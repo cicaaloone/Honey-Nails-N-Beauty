@@ -82,7 +82,6 @@ def recalculate_inventory_stock():
             if doc.exists:
                 doc_ref.update({"Current Qty": net_qty})
             else:
-                # If inventory doc doesn't exist yet, create basic record
                 doc_ref.set({
                     "Item Code": code,
                     "Item Description": "Item",
@@ -94,7 +93,6 @@ def recalculate_inventory_stock():
                     "Time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 })
         
-        # Refresh session inventory items
         docs = db.collection("inventory").stream()
         st.session_state.inventory_items = [doc.to_dict() for doc in docs]
     except Exception as e:
@@ -195,100 +193,99 @@ def show_receipt_dialog(order):
         if not order.get("items"):
             order["items"] = []
 
-       df_items = pd.DataFrame(order["items"])
-    if not df_items.empty and "Qty" in df_items.columns and "Price" in df_items.columns:
-        # Qty နဲ့ Price ပြောင်းလဲသည်နှင့် Amount ကို အလိုအလျောက် တိကျစွာ တွက်ချက်မည်
-        df_items["Amount"] = (
-            pd.to_numeric(df_items["Qty"], errors='coerce').fillna(0) * 
-            pd.to_numeric(df_items["Price"], errors='coerce').fillna(0.0)
-            - pd.to_numeric(df_items.get("Discount", 0), errors='coerce').fillna(0.0)
-            + pd.to_numeric(df_items.get("Tax", 0), errors='coerce').fillna(0.0)
-        )
-    else:
-        df_items = pd.DataFrame(columns=[
-            "Item Code",
-            "Item Description",
-            "Qty",
-            "Price",
-            "Discount",
-            "Tax",
-            "Amount",
-        ])
+        df_items = pd.DataFrame(order["items"])
+        if not df_items.empty and "Qty" in df_items.columns and "Price" in df_items.columns:
+            df_items["Amount"] = (
+                pd.to_numeric(df_items["Qty"], errors='coerce').fillna(0) * 
+                pd.to_numeric(df_items["Price"], errors='coerce').fillna(0.0)
+                - pd.to_numeric(df_items.get("Discount", 0), errors='coerce').fillna(0.0)
+                + pd.to_numeric(df_items.get("Tax", 0), errors='coerce').fillna(0.0)
+            )
+        else:
+            df_items = pd.DataFrame(columns=[
+                "Item Code",
+                "Item Description",
+                "Qty",
+                "Price",
+                "Discount",
+                "Tax",
+                "Amount",
+            ])
 
-    if st.session_state[print_mode_key]:
-        st.info(f"💡 **Print View** (ဖောက်သည်: **{cust_name}**) သို့ ရောက်ရှိနေပါပြီ။")
-        st.dataframe(df_items, use_container_width=True, hide_index=True)
-        edited_df = df_items
-    else:
-        st.write("📋 **Receipt Items List (တည်းဖြတ်ရန်)**")
-        
-        # st.data_editor တွင် Amount ကို User လက်နဲ့ တိုက်ရိုက် မပြင်နိုင်အောင် disabled လုပ်ထားခြင်း
-        edited_df = st.data_editor(
-            df_items,
-            use_container_width=True,
-            hide_index=True,
-            num_rows="dynamic",
-            disabled=["Amount"],  # 👈 Amount ကို Auto တွက်ပေးပြီး တိုက်ရိုက်မပြင်နိုင်အောင် ကာကွယ်ခြင်း
-            key=f"editor_{order['order_id']}",
-        )
+        if st.session_state[print_mode_key]:
+            st.info(f"💡 **Print View** (ဖောက်သည်: **{cust_name}**) သို့ ရောက်ရှိနေပါပြီ။")
+            st.dataframe(df_items, use_container_width=True, hide_index=True)
+            edited_df = df_items
+        else:
+            st.write("📋 **Receipt Items List (တည်းဖြတ်ရန်)**")
+            edited_df = st.data_editor(
+                df_items,
+                use_container_width=True,
+                hide_index=True,
+                num_rows="dynamic",
+                disabled=["Amount"],  # 👈 Amount ကို လက်နဲ့တိုက်ရိုက်ပြင်မရဘဲ Auto ဖြစ်စေရန်
+                key=f"editor_{order['order_id']}",
+            )
 
-        # ဇယားကို တည်းဖြတ်ပြီးသည်နှင့် Amount ကို နောက်တစ်ကြိမ် အသေအချာ ပြန်တွက်မည်
+            # Auto calculate Amount after editing
+            if not edited_df.empty and "Qty" in edited_df.columns and "Price" in edited_df.columns:
+                edited_df["Amount"] = (
+                    pd.to_numeric(edited_df["Qty"], errors='coerce').fillna(0) * 
+                    pd.to_numeric(edited_df["Price"], errors='coerce').fillna(0.0)
+                    - pd.to_numeric(edited_df.get("Discount", 0), errors='coerce').fillna(0.0)
+                    + pd.to_numeric(edited_df.get("Tax", 0), errors='coerce').fillna(0.0)
+                )
+
+            code_to_desc = {}
+            desc_to_code = {}
+            if "inventory_items" in st.session_state:
+                for inv_item in st.session_state["inventory_items"]:
+                    c_str = str(inv_item.get("Item Code", "")).strip()
+                    d_str = str(inv_item.get("Item Description", "")).strip()
+                    if c_str:
+                        code_to_desc[c_str] = d_str
+                    if d_str:
+                        desc_to_code[d_str] = c_str
+
+            updated_items = []
+            for _, row in edited_df.iterrows():
+                code = str(row["Item Code"]).strip() if pd.notna(row["Item Code"]) else ""
+                desc = str(row["Item Description"]).strip() if pd.notna(row["Item Description"]) else ""
+
+                # 👈 Auto-fill Item Code from Description or vice versa
+                if desc and desc in desc_to_code and (not code or code == "HNB-999"):
+                    code = desc_to_code[desc]
+                elif code and code in code_to_desc and (not desc or desc == "New Item"):
+                    desc = code_to_desc[code]
+
+                if not code:
+                    code = "HNB-999"
+                if not desc:
+                    desc = "New Item"
+
+                qty = int(row["Qty"]) if pd.notna(row["Qty"]) else 1
+                price = float(row["Price"]) if pd.notna(row["Price"]) else 0.0
+                discount = float(row["Discount"]) if pd.notna(row["Discount"]) else 0.0
+                tax = float(row["Tax"]) if pd.notna(row["Tax"]) else 0.0
+
+                updated_items.append({
+                    "Item Code": code,
+                    "Item Description": desc,
+                    "Qty": qty,
+                    "Price": price,
+                    "Discount": discount,
+                    "Tax": tax,
+                })
+            order["items"] = updated_items
+            save_sales_to_firebase()
+            recalculate_inventory_stock()
+
         if not edited_df.empty and "Qty" in edited_df.columns and "Price" in edited_df.columns:
-            edited_df["Amount"] = (
+            total_amount = (
                 pd.to_numeric(edited_df["Qty"], errors='coerce').fillna(0) * 
                 pd.to_numeric(edited_df["Price"], errors='coerce').fillna(0.0)
                 - pd.to_numeric(edited_df.get("Discount", 0), errors='coerce').fillna(0.0)
                 + pd.to_numeric(edited_df.get("Tax", 0), errors='coerce').fillna(0.0)
-            )
-
-        code_to_desc = {}
-        desc_to_code = {}
-        if "inventory_items" in st.session_state:
-            for inv_item in st.session_state["inventory_items"]:
-                c_str = str(inv_item.get("Item Code", "")).strip()
-                d_str = str(inv_item.get("Item Description", "")).strip()
-                if c_str:
-                    code_to_desc[c_str] = d_str
-                if d_str:
-                    desc_to_code[d_str] = c_str
-
-        updated_items = []
-        for _, row in edited_df.iterrows():
-            code = str(row["Item Code"]).strip() if pd.notna(row["Item Code"]) else ""
-            desc = str(row["Item Description"]).strip() if pd.notna(row["Item Description"]) else ""
-
-            if code and code in code_to_desc and (not desc or desc == "New Item"):
-                desc = code_to_desc[code]
-            elif desc and desc in desc_to_code and (not code or code == "HNB-999"):
-                code = desc_to_code[desc]
-
-            if not code:
-                code = "HNB-999"
-            if not desc:
-                desc = "New Item"
-
-            qty = int(row["Qty"]) if pd.notna(row["Qty"]) else 1
-            price = float(row["Price"]) if pd.notna(row["Price"]) else 0.0
-            discount = float(row["Discount"]) if pd.notna(row["Discount"]) else 0.0
-            tax = float(row["Tax"]) if pd.notna(row["Tax"]) else 0.0
-
-            updated_items.append({
-                "Item Code": code,
-                "Item Description": desc,
-                "Qty": qty,
-                "Price": price,
-                "Discount": discount,
-                "Tax": tax,
-            })
-        order["items"] = updated_items
-        save_sales_to_firebase()
-        recalculate_inventory_stock()
-
-        if not edited_df.empty and "Qty" in edited_df.columns and "Price" in edited_df.columns:
-            total_amount = (
-                edited_df["Qty"] * edited_df["Price"]
-                - edited_df.get("Discount", 0)
-                + edited_df.get("Tax", 0)
             ).sum()
         else:
             total_amount = 0.0
@@ -357,7 +354,7 @@ def new_order_dialog():
             st.warning("ကျေးဇူးပြု၍ Customer Name ထည့်ပါ။")
 
 
-@st.dialog("🗑️️ Sales Order ဖျက်ရန်")
+@st.dialog("🗑️ Sales Order ဖျက်ရန်")
 def delete_order_dialog():
     if not st.session_state.sales_orders:
         st.warning("ဖျက်ရန် Order များ မရှိသေးပါ။")
@@ -415,9 +412,10 @@ with st.container(border=True):
                 items_df = pd.DataFrame(items_list)
                 if "Qty" in items_df.columns and "Price" in items_df.columns:
                     tot = (
-                        items_df["Qty"] * items_df["Price"]
-                        - items_df.get("Discount", 0)
-                        + items_df.get("Tax", 0)
+                        pd.to_numeric(items_df["Qty"], errors='coerce').fillna(0) * 
+                        pd.to_numeric(items_df["Price"], errors='coerce').fillna(0.0)
+                        - pd.to_numeric(items_df.get("Discount", 0), errors='coerce').fillna(0.0)
+                        + pd.to_numeric(items_df.get("Tax", 0), errors='coerce').fillna(0.0)
                     ).sum()
                 else:
                     tot = 0.0
@@ -458,16 +456,17 @@ with st.container(border=True):
         all_sales_items = []
         for ord_data in st.session_state.sales_orders:
             for itm in ord_data.get("items", []):
+                q = int(itm.get("Qty", 0)) if pd.notna(itm.get("Qty", 0)) else 0
+                p = float(itm.get("Price", 0.0)) if pd.notna(itm.get("Price", 0.0)) else 0.0
+                disc = float(itm.get("Discount", 0.0)) if pd.notna(itm.get("Discount", 0.0)) else 0.0
+                tx = float(itm.get("Tax", 0.0)) if pd.notna(itm.get("Tax", 0.0)) else 0.0
+                
                 all_sales_items.append({
                     "Item Code": itm.get("Item Code"),
                     "Item Description": itm.get("Item Description"),
-                    "Qty": int(itm.get("Qty", 0)),
-                    "Price": float(itm.get("Price", 0.0)),
-                    "Amount": (
-                        int(itm.get("Qty", 0)) * float(itm.get("Price", 0.0))
-                    )
-                    - float(itm.get("Discount", 0.0))
-                    + float(itm.get("Tax", 0.0)),
+                    "Qty": q,
+                    "Price": p,
+                    "Amount": (q * p) - disc + tx,
                 })
 
         if all_sales_items:
