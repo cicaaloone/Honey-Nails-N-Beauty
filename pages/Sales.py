@@ -46,9 +46,7 @@ def save_sales_to_firebase():
 
 
 def recalculate_inventory_stock():
-    """Restock Orders များနှင့် Sales Orders များအပေါ်မူတည်၍ Inventory Qty ကို Duplicate မဖြစ်စေဘဲ တိကျစွာ တွက်ချက် အပ်ဒိတ်လုပ်သည်။"""
     try:
-        # 1. Calculate total restocked qty per item code
         restock_totals = {}
         restock_docs = db.collection("restock_orders").stream()
         for doc in restock_docs:
@@ -60,7 +58,6 @@ def recalculate_inventory_stock():
                 qty = int(itm.get("Qty", 0)) if pd.notna(itm.get("Qty", 0)) else 0
                 restock_totals[code] = restock_totals.get(code, 0) + qty
 
-        # 2. Calculate total sold qty per item code from sales orders
         sales_totals = {}
         for s_order in st.session_state.get("sales_orders", []):
             for itm in s_order.get("items", []):
@@ -70,7 +67,6 @@ def recalculate_inventory_stock():
                 qty = int(itm.get("Qty", 0)) if pd.notna(itm.get("Qty", 0)) else 0
                 sales_totals[code] = sales_totals.get(code, 0) + qty
 
-        # 3. Update Firebase inventory with (Restock Qty - Sold Qty)
         all_item_codes = set(list(restock_totals.keys()) + list(sales_totals.keys()))
         for code in all_item_codes:
             r_qty = restock_totals.get(code, 0)
@@ -155,36 +151,46 @@ def show_receipt_dialog(order):
         if not st.session_state[print_mode_key]:
             st.markdown("💡 **Inventory မှ ပစ္စည်းအသစ် ထည့်သွင်းရန် (Suggestion / Select)**")
             if "inventory_items" in st.session_state and st.session_state["inventory_items"]:
-                inv_options = {
-                    f"[{item['Item Code']}] {item['Item Description']} (Sell: {item.get('Selling Price (Ks)', 0):,.0f} Ks)": item
-                    for item in st.session_state["inventory_items"]
-                }
+                inv_options = {}
+                for item in st.session_state["inventory_items"]:
+                    code = str(item.get("Item Code", "")).strip()
+                    desc = str(item.get("Item Description", "")).strip()
+                    if code and code != "nan":
+                        sell_price = item.get("Selling Price (Ks)", 0) or 0.0
+                        label = f"[{code}] {desc} (Sell: {float(sell_price):,.0f} Ks)"
+                        inv_options[label] = item
 
-                selected_inv_label = st.selectbox(
-                    "ပစ္စည်း ရွေးချယ်ပါ",
-                    options=["-- ရွေးချယ်ရန် --"] + list(inv_options.keys()),
-                    key=f"select_inv_{order['order_id']}",
-                )
+                if inv_options:
+                    selected_inv_label = st.selectbox(
+                        "ပစ္စည်း ရွေးချယ်ပါ",
+                        options=["-- ရွေးချယ်ရန် --"] + list(inv_options.keys()),
+                        key=f"select_inv_{order['order_id']}",
+                    )
 
-                if selected_inv_label != "-- ရွေးချယ်ရန် --":
-                    selected_item_data = inv_options[selected_inv_label]
-                    if st.button(
-                        "➕ ရွေးချယ်ထားသော ပစ္စည်းကို ဇယားသို့ ထည့်မည်",
-                        key=f"add_btn_{order['order_id']}",
-                    ):
-                        code_to_add = str(selected_item_data.get("Item Code", "HNB-001"))
-                        order["items"].append({
-                            "Item Code": code_to_add,
-                            "Item Description": selected_item_data["Item Description"],
-                            "Qty": 1,
-                            "Price": selected_item_data.get("Selling Price (Ks)", 0.0),
-                            "Discount": 0.0,
-                            "Tax": 0.0,
-                        })
-                        save_sales_to_firebase()
-                        recalculate_inventory_stock()
-                        st.success("ပစ္စည်း ထည့်ပြီးပါပြီ!")
-                        st.rerun()
+                    if selected_inv_label != "-- ရွေးချယ်ရန် --":
+                        selected_item_data = inv_options[selected_inv_label]
+                        if st.button(
+                            "➕ ရွေးချယ်ထားသော ပစ္စည်းကို ဇယားသို့ ထည့်မည်",
+                            key=f"add_btn_{order['order_id']}",
+                        ):
+                            code_to_add = str(selected_item_data.get("Item Code", "HNB-001"))
+                            desc_to_add = str(selected_item_data.get("Item Description", "Item"))
+                            sell_p = float(selected_item_data.get("Selling Price (Ks)", 0.0) or 0.0)
+                            
+                            order["items"].append({
+                                "Item Code": code_to_add,
+                                "Item Description": desc_to_add,
+                                "Qty": 1,
+                                "Price": sell_p,
+                                "Discount": 0.0,
+                                "Tax": 0.0,
+                            })
+                            save_sales_to_firebase()
+                            recalculate_inventory_stock()
+                            st.success("ပစ္စည်း ထည့်ပြီးပါပြီ!")
+                            st.rerun()
+                else:
+                    st.warning("Inventory ထဲတွင် မှန်ကန်သော ပစ္စည်းစာရင်းများ မရှိသေးပါ။")
             else:
                 st.warning("Inventory ထဲတွင် ပစ္စည်းများ မရှိသေးပါ။")
 
@@ -194,23 +200,28 @@ def show_receipt_dialog(order):
             order["items"] = []
 
         df_items = pd.DataFrame(order["items"])
-        if not df_items.empty and "Qty" in df_items.columns and "Price" in df_items.columns:
-            df_items["Amount"] = (
-                pd.to_numeric(df_items["Qty"], errors='coerce').fillna(0) * 
-                pd.to_numeric(df_items["Price"], errors='coerce').fillna(0.0)
-                - pd.to_numeric(df_items.get("Discount", 0), errors='coerce').fillna(0.0)
-                + pd.to_numeric(df_items.get("Tax", 0), errors='coerce').fillna(0.0)
-            )
-        else:
-            df_items = pd.DataFrame(columns=[
-                "Item Code",
-                "Item Description",
-                "Qty",
-                "Price",
-                "Discount",
-                "Tax",
-                "Amount",
-            ])
+        
+        # လိုအပ်သော Columns များ အစုံအလင် ပါဝင်စေရန် စစ်ဆေးခြင်း
+        standard_cols = ["Item Code", "Item Description", "Qty", "Discount", "Price", "Tax", "Amount"]
+        for col in standard_cols:
+            if col not in df_items.columns:
+                if col in ["Qty", "Discount", "Tax"]:
+                    df_items[col] = 0
+                elif col == "Price":
+                    df_items[col] = 0.0
+                else:
+                    df_items[col] = ""
+
+        # Amount ကို တွက်ချက်ခြင်း
+        df_items["Amount"] = (
+            pd.to_numeric(df_items["Qty"], errors='coerce').fillna(0) * 
+            pd.to_numeric(df_items["Price"], errors='coerce').fillna(0.0)
+            - pd.to_numeric(df_items["Discount"], errors='coerce').fillna(0.0)
+            + pd.to_numeric(df_items["Tax"], errors='coerce').fillna(0.0)
+        )
+        
+        # Column စဉ် တကျဖြစ်စေရန်
+        df_items = df_items[standard_cols]
 
         if st.session_state[print_mode_key]:
             st.info(f"💡 **Print View** (ဖောက်သည်: **{cust_name}**) သို့ ရောက်ရှိနေပါပြီ။")
@@ -223,17 +234,16 @@ def show_receipt_dialog(order):
                 use_container_width=True,
                 hide_index=True,
                 num_rows="dynamic",
-                disabled=["Amount"],  # 👈 Amount ကို လက်နဲ့တိုက်ရိုက်ပြင်မရဘဲ Auto ဖြစ်စေရန်
+                disabled=["Amount"],
                 key=f"editor_{order['order_id']}",
             )
 
-            # Auto calculate Amount after editing
-            if not edited_df.empty and "Qty" in edited_df.columns and "Price" in edited_df.columns:
+            if not edited_df.empty:
                 edited_df["Amount"] = (
                     pd.to_numeric(edited_df["Qty"], errors='coerce').fillna(0) * 
                     pd.to_numeric(edited_df["Price"], errors='coerce').fillna(0.0)
-                    - pd.to_numeric(edited_df.get("Discount", 0), errors='coerce').fillna(0.0)
-                    + pd.to_numeric(edited_df.get("Tax", 0), errors='coerce').fillna(0.0)
+                    - pd.to_numeric(edited_df["Discount"], errors='coerce').fillna(0.0)
+                    + pd.to_numeric(edited_df["Tax"], errors='coerce').fillna(0.0)
                 )
 
             code_to_desc = {}
@@ -252,7 +262,6 @@ def show_receipt_dialog(order):
                 code = str(row["Item Code"]).strip() if pd.notna(row["Item Code"]) else ""
                 desc = str(row["Item Description"]).strip() if pd.notna(row["Item Description"]) else ""
 
-                # 👈 Auto-fill Item Code from Description or vice versa
                 if desc and desc in desc_to_code and (not code or code == "HNB-999"):
                     code = desc_to_code[desc]
                 elif code and code in code_to_desc and (not desc or desc == "New Item"):
@@ -280,12 +289,12 @@ def show_receipt_dialog(order):
             save_sales_to_firebase()
             recalculate_inventory_stock()
 
-        if not edited_df.empty and "Qty" in edited_df.columns and "Price" in edited_df.columns:
+        if not edited_df.empty:
             total_amount = (
                 pd.to_numeric(edited_df["Qty"], errors='coerce').fillna(0) * 
                 pd.to_numeric(edited_df["Price"], errors='coerce').fillna(0.0)
-                - pd.to_numeric(edited_df.get("Discount", 0), errors='coerce').fillna(0.0)
-                + pd.to_numeric(edited_df.get("Tax", 0), errors='coerce').fillna(0.0)
+                - pd.to_numeric(edited_df["Discount"], errors='coerce').fillna(0.0)
+                + pd.to_numeric(edited_df["Tax"], errors='coerce').fillna(0.0)
             ).sum()
         else:
             total_amount = 0.0
@@ -391,9 +400,6 @@ with top_col3:
 
 st.markdown("---")
 
-# ==========================================
-# 📦 CONTAINER 1: Orders List
-# ==========================================
 with st.container(border=True):
     st.subheader("📋 Orders List (အရောင်းစာရင်းများ)")
 
@@ -446,9 +452,6 @@ with st.container(border=True):
 
 st.markdown("---")
 
-# ==========================================
-# 🛒 CONTAINER 2: All Items Summary
-# ==========================================
 with st.container(border=True):
     st.subheader("🛍️ Best Selling Items Summary (အရောင်းရဆုံး ပစ္စည်းများ အကျဉ်းချုပ်)")
 
