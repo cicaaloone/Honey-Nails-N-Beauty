@@ -142,9 +142,10 @@ def show_receipt_dialog(order):
         with col_info1:
             st.write("**Shop Name:** Honey Nails 'n' Beauty")
             st.write(f"**Customer Name:** {cust_name}")
-            st.write(f"**Date & Time:** {order['time']}")
+            
         with col_info2:
             st.write(f"**Receipt No:** REC-{rec_id}")
+            st.write(f"**Date & Time:** {order['time']}")
 
         st.markdown("---")
 
@@ -161,34 +162,43 @@ def show_receipt_dialog(order):
                         inv_options[label] = item
 
                 if inv_options:
-                    selected_inv_label = st.selectbox(
-                        "ပစ္စည်း ရွေးချယ်ပါ",
-                        options=["-- ရွေးချယ်ရန် --"] + list(inv_options.keys()),
-                        key=f"select_inv_{order['order_id']}",
-                    )
-
-                    if selected_inv_label != "-- ရွေးချယ်ရန် --":
-                        selected_item_data = inv_options[selected_inv_label]
+                    # 👈 Selectbox နဲ့ Button ကို Column 2 ခုဖြင့် ဘေးချင်းယှဉ်ပြသခြင်း
+                    sel_col, btn_col = st.columns([3.5, 1.5])
+                    with sel_col:
+                        selected_inv_label = st.selectbox(
+                            "ပစ္စည်း ရွေးချယ်ပါ",
+                            options=["-- ရွေးချယ်ရန် --"] + list(inv_options.keys()),
+                            key=f"select_inv_{order['order_id']}",
+                            label_visibility="collapsed"
+                        )
+                    with btn_col:
+                        st.write("") # နေရာချိန်ရန်
                         if st.button(
-                            "➕ ရွေးချယ်ထားသော ပစ္စည်းကို ဇယားသို့ ထည့်မည်",
+                            "➕ ဇယားသို့ ထည့်မည်",
                             key=f"add_btn_{order['order_id']}",
+                            type="primary",
+                            use_container_width=True
                         ):
-                            code_to_add = str(selected_item_data.get("Item Code", "HNB-001"))
-                            desc_to_add = str(selected_item_data.get("Item Description", "Item"))
-                            sell_p = float(selected_item_data.get("Selling Price (Ks)", 0.0) or 0.0)
-                            
-                            order["items"].append({
-                                "Item Code": code_to_add,
-                                "Item Description": desc_to_add,
-                                "Qty": 1,
-                                "Price": sell_p,
-                                "Discount": 0.0,
-                                "Tax": 0.0,
-                            })
-                            save_sales_to_firebase()
-                            recalculate_inventory_stock()
-                            st.success("ပစ္စည်း ထည့်ပြီးပါပြီ!")
-                            st.rerun()
+                            if selected_inv_label != "-- ရွေးချယ်ရန် --":
+                                selected_item_data = inv_options[selected_inv_label]
+                                code_to_add = str(selected_item_data.get("Item Code", "HNB-001"))
+                                desc_to_add = str(selected_item_data.get("Item Description", "Item"))
+                                sell_p = float(selected_item_data.get("Selling Price (Ks)", 0.0) or 0.0)
+                                
+                                order["items"].append({
+                                    "Item Code": code_to_add,
+                                    "Item Description": desc_to_add,
+                                    "Qty": 1,
+                                    "Price": sell_p,
+                                    "Discount": 0.0,
+                                    "Tax": 0.0,
+                                })
+                                save_sales_to_firebase()
+                                recalculate_inventory_stock()
+                                st.success("ပစ္စည်း ထည့်ပြီးပါပြီ!")
+                                st.rerun()
+                            else:
+                                st.warning("ကျေးဇူးပြု၍ ပစ္စည်းတစ်ခု ရွေးပါ။")
                 else:
                     st.warning("Inventory ထဲတွင် မှန်ကန်သော ပစ္စည်းစာရင်းများ မရှိသေးပါ။")
             else:
